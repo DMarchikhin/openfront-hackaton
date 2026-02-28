@@ -66,7 +66,64 @@ export interface RebalanceParams {
   };
 }
 
-export async function executeInvestment(params: ExecuteInvestmentParams): Promise<AgentResult> {
+// StreamEvent types emitted to SSE subscribers during agent execution
+export type StreamEvent =
+  | { type: 'thinking'; text: string }
+  | { type: 'text'; text: string }
+  | { type: 'tool_start'; tool: string }
+  | { type: 'tool_progress'; tool: string; elapsed: number }
+  | { type: 'tool_result'; tool: string; summary: string }
+  | { type: 'status'; description: string }
+  | { type: 'result'; text: string }
+  | { type: 'error'; message: string }
+  | { type: 'done' };
+
+// Shared helper: maps a single SDK message to StreamEvent(s) and calls onMessage
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function handleSdkMessage(message: any, onMessage: (event: StreamEvent) => void): void {
+  try {
+    if (message.type === 'stream_event') {
+      const event = message.event;
+      if (event?.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
+        onMessage({ type: 'text', text: event.delta.text });
+      }
+    } else if (message.type === 'assistant') {
+      const content = message.message?.content ?? [];
+      for (const block of content) {
+        if (block.type === 'text' && block.text) {
+          onMessage({ type: 'thinking', text: block.text });
+        } else if (block.type === 'thinking' && block.thinking) {
+          onMessage({ type: 'thinking', text: block.thinking });
+        }
+      }
+    } else if (message.type === 'tool_progress') {
+      if (message.elapsed_time_seconds != null) {
+        onMessage({ type: 'tool_progress', tool: message.tool_name ?? 'tool', elapsed: message.elapsed_time_seconds });
+      } else {
+        onMessage({ type: 'tool_start', tool: message.tool_name ?? 'tool' });
+      }
+    } else if (message.type === 'tool_use_summary') {
+      onMessage({ type: 'tool_result', tool: message.tool_name ?? 'tool', summary: message.summary ?? '' });
+    } else if (message.type === 'system') {
+      if (message.subtype === 'task_started' || message.subtype === 'task_progress') {
+        onMessage({ type: 'status', description: message.description ?? '' });
+      }
+    } else if (message.type === 'result') {
+      if (message.subtype === 'success') {
+        onMessage({ type: 'result', text: message.result ?? '' });
+      } else {
+        onMessage({ type: 'error', message: message.error ?? 'Agent execution failed' });
+      }
+    }
+  } catch {
+    // Never let SSE emission break the main agent loop
+  }
+}
+
+export async function executeInvestment(
+  params: ExecuteInvestmentParams,
+  onMessage?: (event: StreamEvent) => void,
+): Promise<AgentResult> {
   const chainId = parseInt(process.env.CHAIN_ID ?? '84532', 10);
 
   const context: InvestmentContext = {
@@ -112,12 +169,16 @@ export async function executeInvestment(params: ExecuteInvestmentParams): Promis
     });
 
     for await (const message of agentQuery) {
+      if (onMessage) {
+        handleSdkMessage(message, onMessage);
+      }
       if (message.type === 'result' && message.subtype === 'success') {
         resultText = message.result;
       }
     }
   } catch (err) {
     const errorMessage = (err as Error).message;
+    try { onMessage?.({ type: 'error', message: errorMessage }); } catch {}
     return {
       investmentId: params.investmentId,
       actions: [
@@ -134,10 +195,14 @@ export async function executeInvestment(params: ExecuteInvestmentParams): Promis
     };
   }
 
+  try { onMessage?.({ type: 'done' }); } catch {}
   return parseAgentResult(params.investmentId, resultText);
 }
 
-export async function rebalanceInvestment(params: RebalanceParams): Promise<AgentResult> {
+export async function rebalanceInvestment(
+  params: RebalanceParams,
+  onMessage?: (event: StreamEvent) => void,
+): Promise<AgentResult> {
   const chainId = parseInt(process.env.CHAIN_ID ?? '84532', 10);
 
   const context: RebalanceContext = {
@@ -182,12 +247,16 @@ export async function rebalanceInvestment(params: RebalanceParams): Promise<Agen
     });
 
     for await (const message of agentQuery) {
+      if (onMessage) {
+        handleSdkMessage(message, onMessage);
+      }
       if (message.type === 'result' && message.subtype === 'success') {
         resultText = message.result;
       }
     }
   } catch (err) {
     const errorMessage = (err as Error).message;
+    try { onMessage?.({ type: 'error', message: errorMessage }); } catch {}
     return {
       investmentId: params.investmentId,
       actions: [{ actionType: 'rebalance', status: 'failed', rationale: `Rebalance failed: ${errorMessage}` }],
@@ -198,6 +267,7 @@ export async function rebalanceInvestment(params: RebalanceParams): Promise<Agen
     };
   }
 
+  try { onMessage?.({ type: 'done' }); } catch {}
   return parseAgentResult(params.investmentId, resultText);
 }
 

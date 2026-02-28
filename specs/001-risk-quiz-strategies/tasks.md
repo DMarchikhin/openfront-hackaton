@@ -661,3 +661,174 @@ Task T084: "Integrate PortfolioSection into dashboard"
 2. US8 Wallet Balance → Available/invested/total visible → Demo checkpoint
 3. US9 Pool Positions → Pool cards with tx history → Demo checkpoint
 4. Polish → Error handling, validation → Final demo
+
+---
+---
+
+# Phase 4: Agent Chat Interface + Real-Time Thinking UI
+
+**Input**: Phase 4 design documents from `/specs/001-risk-quiz-strategies/` (plan.md, research.md R23-R26, contracts/agent-streaming.md)
+**Prerequisites**: All Phase 1-18 tasks completed ✅
+
+**Tests**: Manual end-to-end (hackathon scope). No automated tests.
+
+**Organization**: Tasks grouped into chat-specific user stories. US10 = Agent Real-Time Streaming, US11 = Interactive Chat, US12 = Dashboard Polish (P2).
+
+## Path Conventions (Phase 4)
+
+- **Agent app**: `apps/agent/src/`
+- **Frontend**: `apps/web/src/`
+- **No backend (API) changes** — persisted actions stay as-is
+
+---
+
+## Phase 19: Agent SSE Infrastructure (Foundational)
+
+**Purpose**: Add SSE streaming capability to the agent server. Capture all intermediate SDK messages from `query()` and broadcast them to connected frontends via Server-Sent Events. MUST complete before any frontend chat work.
+
+**CRITICAL**: No chat UI work can begin until this phase is complete.
+
+- [x] T095 Add `StreamEvent` type and `onMessage` callback to `executeInvestment()` in `apps/agent/src/index.ts` — define exported `StreamEvent` union type per plan.md (thinking, text, tool_start, tool_progress, tool_result, status, result, error, done). Add optional `onMessage?: (event: StreamEvent) => void` parameter to `executeInvestment()`. Expand the `for await (const message of agentQuery)` loop (currently lines 114-118) to handle all SDK message types: `stream_event` with `content_block_delta` → emit `{ type: 'text', text: delta.text }`, `assistant` messages → emit `{ type: 'thinking', text }` for thinking content blocks, `tool_progress` → emit `{ type: 'tool_progress', tool: message.tool_name, elapsed: message.elapsed_time_seconds }`, `tool_use_summary` → emit `{ type: 'tool_result', tool: message.tool_name, summary: message.summary }`, `system` with subtype `task_started` → emit `{ type: 'status', description: message.description }`, `result` → emit `{ type: 'result', text }` then `{ type: 'done' }`. Keep existing result parsing logic intact. Wrap all `onMessage?.()` calls in try/catch to never break the main loop.
+
+- [x] T096 Add same `onMessage` callback to `rebalanceInvestment()` in `apps/agent/src/index.ts` — identical SDK message handling as T095 for the rebalance `for await` loop (currently lines 184-188). Both functions share the same `StreamEvent` type and message mapping logic. Extract the message-handling logic into a shared helper function (e.g., `handleSdkMessage(message, onMessage)`) to avoid duplication.
+
+- [x] T097 Add CORS headers and OPTIONS preflight handling to `apps/agent/src/server.ts` — add a helper function `setCors(res: http.ServerResponse)` that sets `Access-Control-Allow-Origin: http://localhost:3000`, `Access-Control-Allow-Methods: GET, POST, OPTIONS`, `Access-Control-Allow-Headers: Content-Type`. Call `setCors(res)` on every response. Add `OPTIONS` method handling at the top of the request handler: if `method === 'OPTIONS'`, call `setCors(res)`, set status 204, `res.end()`, return. Apply CORS to existing `/health`, `/execute`, `/rebalance` responses.
+
+- [x] T098 Add SSE subscriber registry and `GET /stream/:investmentId` endpoint to `apps/agent/src/server.ts` — add `const activeStreams = new Map<string, Set<http.ServerResponse>>()` at module scope. Add `broadcastEvent(investmentId: string, type: string, data: Record<string, unknown>)` helper that iterates all responses in `activeStreams.get(investmentId)` and writes `event: ${type}\ndata: ${JSON.stringify(data)}\n\n`. Add route: if `method === 'GET' && url?.startsWith('/stream/')`, parse investmentId from URL, call `setCors(res)`, set SSE headers (`Content-Type: text/event-stream`, `Cache-Control: no-cache`, `Connection: keep-alive`), register res in `activeStreams`, write `event: connected\ndata: {}\n\n`, handle cleanup on `req.on('close')` (remove res from set, delete map entry if set empty). Add 15-minute timeout per connection.
+
+- [x] T099 Wire `onMessage` callback from `/execute` and `/rebalance` handlers to `broadcastEvent` in `apps/agent/src/server.ts` — in the `/execute` handler, change `executeInvestment(params)` to `executeInvestment(params, (event) => broadcastEvent(params.investmentId, event.type, event))`. Same for `/rebalance` → `rebalanceInvestment(params, (event) => broadcastEvent(params.investmentId, event.type, event))`. After the `.then()` callback completes (result POSTed to API), broadcast `{ type: 'done' }` and clean up subscribers. After the `.catch()` callback, broadcast `{ type: 'error', message }` then `{ type: 'done' }`.
+
+**Checkpoint**: `curl -N http://localhost:3002/stream/test-id` receives `event: connected` then stays open. Starting an investment broadcasts real-time SDK events to all connected SSE clients.
+
+---
+
+## Phase 20: US10 — Real-Time Agent Streaming UI (P0)
+
+**Goal**: Replace the static AgentActions list with a live chat panel that shows the agent's thinking, tool calls, and results as they happen in real-time via SSE.
+
+**Independent Test**: Start investing → dashboard shows AgentChat panel → SSE connects → real-time messages stream in: "Calling aave_get_reserves..." → tool result → agent thinking → "Supplying $X to Aave..." → summary card.
+
+**Depends on**: Phase 19 complete
+
+- [ ] T100 [P] [US10] Add `ChatMessage` discriminated union type, `sendAgentMessage()` function, and `NEXT_PUBLIC_AGENT_URL` env var support to `apps/web/src/lib/api.ts` — add type per contracts/agent-streaming.md: `ChatMessage = { id: string; type: 'thinking' | 'text' | 'tool_start' | 'tool_progress' | 'tool_result' | 'status' | 'action' | 'result' | 'error' | 'user'; ... }` (full discriminated union with all fields per type). Add `const AGENT_URL = process.env.NEXT_PUBLIC_AGENT_URL ?? 'http://localhost:3002'`. Add `sendAgentMessage(investmentId: string, userId: string, message: string, context: { strategyName: string; strategyId: string; riskLevel: string; walletAddress: string }): Promise<{ status: string; investmentId: string }>` that POSTs to `${AGENT_URL}/chat`.
+
+- [ ] T101 [P] [US10] Create `useAgentStream` hook in `apps/web/src/hooks/useAgentStream.ts` — export `function useAgentStream(investmentId: string | null, isProcessing: boolean): { messages: ChatMessage[], isConnected: boolean }`. Implementation: use `useState<ChatMessage[]>` for messages, `useState<boolean>` for isConnected. In `useEffect` (deps: investmentId, isProcessing): if no investmentId or not processing, return. Create `EventSource` to `${AGENT_URL}/stream/${investmentId}`. Listen for typed events: `connected` → set isConnected=true, `thinking` → append ChatMessage with `type: 'thinking'`, `text` → coalesce consecutive text events into single message (check if last message is `type: 'text'`, if so update its text, else append new), `tool_start` → append, `tool_progress` → find existing tool_start message for same tool and update elapsed, `tool_result` → find existing tool_start/progress message for same tool and replace with tool_result, `status`/`result`/`error` → append as new message, `done` → set isConnected=false, close EventSource. On `onerror` → set isConnected=false. Cleanup on unmount: close EventSource. Generate unique IDs via `crypto.randomUUID()`.
+
+- [ ] T102 [US10] Create `AgentChat` component in `apps/web/src/components/dashboard/AgentChat.tsx` — props: `{ investmentId: string, actions: AgentAction[], isProcessing: boolean, onSendMessage?: (message: string) => void, investment: ActiveInvestment | null }`. Implementation: call `useAgentStream(investmentId, isProcessing)` to get `{ messages, isConnected }`. Render three sections: (1) **Header**: "Agent Activity" text + status indicator dot (pulsing green `animate-pulse` when isConnected, gray when not). (2) **Message list**: scrollable `div` with `overflow-y-auto max-h-[500px]` and `ref` for auto-scroll via `useEffect` calling `scrollIntoView({ behavior: 'smooth' })` on new messages. Render each ChatMessage by type: `thinking` → gray italic text with brain icon "🧠", collapsible via `useState` toggle (default collapsed, show first 100 chars), `text` → left-aligned white bubble with text, `tool_start` → pill badge with spinner: "Calling {tool}...", `tool_progress` → same pill with "{elapsed}s" timer, `tool_result` → green checkmark pill with summary, `status` → centered gray divider text, `result` → green-bordered summary card, `error` → red-bordered error card with message, `user` → right-aligned blue bubble. (3) When no SSE messages and actions exist, fall back to rendering existing `<AgentActions>` component with persisted actions. Auto-scroll to bottom on new messages.
+
+- [ ] T103 [US10] Integrate AgentChat into dashboard — replace `<AgentActions>` with `<AgentChat>` in `apps/web/src/app/dashboard/page.tsx`. Pass props: `investmentId={investment.investmentId}`, `actions={actions}`, `isProcessing={actions.length === 0 || actions.every(a => a.status === 'pending')}`, `investment={investment}`. Remove direct import of `AgentActions` (it's now used internally by AgentChat). Keep existing polling `useEffect` as fallback for persistence sync — but when SSE is connected, the chat panel shows real-time data.
+
+**Checkpoint**: Dashboard shows live agent thinking UI during execution. Real-time tool calls, thinking, and results stream in as they happen.
+
+---
+
+## Phase 21: US11 — Interactive Chat (P1)
+
+**Goal**: Users can type natural language commands ("What's my APY?", "Invest $500 more") and get agent responses streamed back in the same chat panel.
+
+**Independent Test**: After agent completes, type "What's my current APY?" in chat input → agent responds via SSE with live rate data. Type "Check gas prices" → agent calls tool and streams response. Click "Invest more" chip → enter amount → agent runs new execution with streaming.
+
+**Depends on**: Phase 20 complete
+
+- [ ] T104 [US11] Create conversational chat prompt in `apps/agent/src/chat-prompt.ts` — export `function buildChatPrompt(context: ChatContext): string` where `ChatContext` has: `{ message: string, strategyName: string, strategyId: string, riskLevel: string, walletAddress: string, chainId: number }`. The prompt instructs Claude to: answer DeFi questions in plain English (no jargon), use MCP tools to fetch live data when relevant (aave_get_reserves for APY, get_gas_price for gas, openfort_get_balance for balance), keep responses concise (2-3 sentences max), if user requests an action like "invest $X more" respond with a summary of what would need to happen (do NOT execute transactions in chat mode). Include Aave V3 contract addresses per chain (same as agent-prompt.ts). Export `chatToolsAllowList` array: `['mcp__aave__aave_get_reserves', 'mcp__aave__get_gas_price', 'mcp__aave__get_balance', 'mcp__openfort__openfort_get_balance']` (read-only tools only).
+
+- [ ] T105 [US11] Add `POST /chat` endpoint to `apps/agent/src/server.ts` — route: if `method === 'POST' && url === '/chat'`, read body as `{ investmentId, userId, message, context: { strategyName, strategyId, riskLevel, walletAddress } }`. Respond `202 { status: 'accepted', investmentId }` immediately. In background: import `buildChatPrompt` and `chatToolsAllowList` from `./chat-prompt.js`, build prompt, call `query()` with `maxTurns: 5`, `model: 'claude-sonnet-4-6'`, same MCP servers, `allowedTools: chatToolsAllowList`, `permissionMode: 'bypassPermissions'`. Iterate messages with same `handleSdkMessage` helper from T095/T096, passing `(event) => broadcastEvent(investmentId, event.type, event)`. On completion broadcast `{ type: 'done' }`. On error broadcast `{ type: 'error', message }` then `{ type: 'done' }`. Update server startup log to include `POST /chat` endpoint.
+
+- [ ] T106 [US11] Add chat input and quick-action chips to `AgentChat` in `apps/web/src/components/dashboard/AgentChat.tsx` — add section (3) below the message list: a row of quick-action chip buttons above the input: `[Check APY]` `[Gas prices]` `[What's my balance?]` `[Explain last action]`. Each chip calls `onSendMessage?.(chipText)` and appends a `{ type: 'user', text: chipText }` message to the local messages array. Below chips: a text input field with send button. On submit (enter key or button click): call `onSendMessage?.(inputText)`, append `{ type: 'user', text }` message, clear input. Disable input and chips while `isConnected` is true (agent is streaming). Style: chips as small rounded pill buttons with `bg-gray-100 hover:bg-gray-200 text-sm`, input as standard text field with send icon button.
+
+- [ ] T107 [US11] Wire `handleSendMessage` in dashboard page `apps/web/src/app/dashboard/page.tsx` — add `handleSendMessage` callback that calls `sendAgentMessage(investment.investmentId, getUserId(), message, { strategyName: investment.strategy.name, strategyId: investment.strategy.id, riskLevel: investment.strategy.riskLevel, walletAddress: smartAccountAddress })` from `api.ts`. Pass `onSendMessage={handleSendMessage}` to `<AgentChat>`. Import `sendAgentMessage` from `@/lib/api`.
+
+**Checkpoint**: Users can type questions in the chat panel and receive streaming agent responses. Quick-action chips provide one-click common queries.
+
+---
+
+## Phase 22: Polish & P2 Features
+
+**Purpose**: Browser notifications, yield projection card, and end-to-end validation.
+
+- [ ] T108 [P] Add browser notification on agent completion in `apps/web/src/hooks/useAgentStream.ts` — when a `result` event is received, check `Notification.permission === 'granted'` and fire `new Notification('Autopilot Savings', { body: 'Agent finished allocating your funds!' })`. Add a separate `useEffect` in `useAgentStream` (or export a separate hook) that calls `Notification.requestPermission()` once on mount if permission is `'default'`.
+
+- [ ] T109 [P] Create YieldProjection component in `apps/web/src/components/dashboard/YieldProjection.tsx` — props: `{ investedAmount: number, apyPercent: number }`. Show "Projected Earnings" card with 4 columns: 1 month, 3 months, 6 months, 12 months. Calculate each as `investedAmount * (apyPercent / 100) * (months / 12)`. Format as `$X.XX`. Render a simple SVG sparkline (4 points connected by a line, height proportional to amount) for visual appeal — no charting library. Style: subtle gray card with green accent for projected values.
+
+- [ ] T110 Integrate YieldProjection into dashboard in `apps/web/src/app/dashboard/page.tsx` — render `<YieldProjection>` between `<PortfolioSection>` and `<AgentChat>`. Pass `investedAmount={portfolio?.investedBalanceUsd ?? 0}` and `apyPercent` (derive from portfolio pools: weighted average of `latestApyPercent` by `allocationPercent`, or fall back to strategy's `expectedApyMin`). Only render when `portfolio` exists and `investedAmount > 0`.
+
+- [ ] T111 Run full end-to-end validation — start all services (API on 3001, Web on 3000, Agent on 3002, Aave MCP on 8080). Walk through: (1) dashboard → verify SSE connects when agent is processing, (2) start investing → verify AgentChat shows real-time thinking, tool calls, results as they stream, (3) after agent completes → verify browser notification → verify chat input becomes active, (4) type "What's my current APY?" → verify agent responds with live rate data in chat, (5) click "Gas prices" chip → verify agent calls tool and streams response, (6) verify YieldProjection card shows projected earnings below portfolio section, (7) refresh page mid-execution → verify polling fills in missed actions, SSE reconnects for remaining events.
+
+**Checkpoint**: Full agent chat experience — real-time streaming, interactive queries, browser notifications, yield projections. Demo-ready.
+
+---
+
+## Dependencies & Execution Order (Phase 4)
+
+### Phase Dependencies
+
+- **Agent SSE Infrastructure (Phase 19)**: Depends on Phase 1-18 complete ✅ — start immediately
+- **US10 Real-Time Streaming UI (Phase 20)**: Depends on Phase 19 — needs SSE endpoint
+- **US11 Interactive Chat (Phase 21)**: Depends on Phase 20 — needs chat panel component
+- **Polish & P2 (Phase 22)**: Depends on Phase 20 (notifications use useAgentStream, yield projection uses portfolio)
+
+### User Story Dependencies
+
+- **US10 (Streaming UI)**: Depends on Phase 19 — core real-time display
+- **US11 (Interactive Chat)**: Depends on US10 — extends chat panel with input and POST /chat
+- **US10 + US11 are sequential** (US11 adds to the component US10 creates)
+- **Phase 22 Polish**: Can start partially after US10 (notifications in useAgentStream, yield projection independent of chat)
+
+### Within Phases
+
+- T095 before T096 (shared helper function)
+- T097 before T098 (CORS needed for SSE endpoint)
+- T098 before T099 (broadcastEvent needed for wiring)
+- T100 + T101 are parallel (different files, both depend on Phase 19)
+- T102 depends on T100 + T101 (uses ChatMessage type + useAgentStream hook)
+- T103 depends on T102 (integrates AgentChat into dashboard)
+- T104 before T105 (chat prompt needed for /chat endpoint)
+- T106 depends on T102 (extends AgentChat component)
+- T107 depends on T106 (wires handler in dashboard)
+- T108 + T109 are parallel (different files, different concerns)
+- T110 depends on T109 (integrates YieldProjection)
+
+### Parallel Opportunities
+
+- T100 + T101: ChatMessage types and useAgentStream hook in parallel (different files)
+- T108 + T109: Browser notifications and YieldProjection in parallel (different files)
+- T104 + T100: Chat prompt and frontend types can start in parallel after Phase 19
+
+---
+
+## Parallel Example: Agent Chat Core (US10)
+
+```bash
+# Phase 19 infrastructure (sequential, same files):
+Task T095: "StreamEvent type + onMessage in executeInvestment"
+Task T096: "onMessage in rebalanceInvestment + shared helper"
+Task T097: "CORS headers"
+Task T098: "SSE endpoint + subscriber registry"
+Task T099: "Wire onMessage → broadcastEvent"
+
+# Phase 20 frontend (parallel after Phase 19):
+Task T100: "ChatMessage types + sendAgentMessage"   # parallel
+Task T101: "useAgentStream SSE hook"                 # parallel
+
+# Then component + integration (sequential, shared files):
+Task T102: "AgentChat component"
+Task T103: "Integrate into dashboard"
+```
+
+---
+
+## Implementation Strategy (Phase 4)
+
+### MVP First (US10 Streaming UI Only)
+
+1. Complete Phase 19: Agent SSE Infrastructure (T095-T099)
+2. Complete Phase 20: US10 — Real-Time Streaming UI (T100-T103)
+3. **STOP and VALIDATE**: Start investing → see real-time agent thinking in chat panel
+4. Demo: "User watches the agent think and act in real-time"
+
+### Full Delivery
+
+1. Agent SSE Infrastructure → SSE endpoint broadcasts SDK events
+2. US10 Streaming UI → Live thinking panel → Demo checkpoint
+3. US11 Interactive Chat → User can ask questions → Demo checkpoint
+4. Polish → Notifications, yield projections → Final demo

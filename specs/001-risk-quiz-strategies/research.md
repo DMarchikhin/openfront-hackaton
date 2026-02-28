@@ -348,3 +348,78 @@ earnedYield = onChainBalance - netInvested
 - New `AgentExecution` entity with job tracking: Cleaner model but requires migration, repository, endpoints. Over-engineered.
 - `UserInvestment.agentStatus` field: Requires migration. Couples investment entity to agent lifecycle.
 - In-memory state: Lost on restart. Not durable.
+
+---
+
+## Phase 5 Research (Agent Chat Interface)
+
+### R23: Real-time streaming mechanism for agent thinking
+
+**Decision**: SSE (Server-Sent Events) from agent server directly to frontend, bypassing NestJS API.
+
+**Rationale**:
+- SSE is unidirectional (agent → user), matching the primary use case. User commands go via simple POST.
+- Zero new npm dependencies: Node.js `http` supports SSE natively. Browser `EventSource` API handles reconnect.
+- Agent server already uses raw `http.createServer()` — adding SSE headers is trivial.
+- Direct connection (frontend → agent:3002) avoids building SSE passthrough in NestJS. For production this would use a reverse proxy; for hackathon, CORS is sufficient.
+- No protocol upgrade handshake needed (unlike WebSocket). Testable with `curl`.
+
+**Alternatives considered**:
+- **WebSocket** (`ws` or `socket.io`): Bidirectional but overkill — user input is POST-based, not streaming. Requires additional npm packages and protocol upgrade handling.
+- **SSE through NestJS API**: Cleaner architecture but NestJS would need to maintain open connections to agent server AND forward to frontend — double the complexity for no benefit at hackathon scale.
+- **Enhanced polling** (500ms interval): Simpler but wastes bandwidth and can't deliver character-by-character text streaming. Thinking/tool progress would be chunky.
+- **SSE from agent directly (chosen)**: Simplest path, zero dependencies, hackathon-appropriate.
+
+### R24: Claude Agent SDK streaming message types
+
+**Decision**: Capture all `SDKMessage` types from `query()` async generator and forward via SSE.
+
+**Rationale**: The SDK's `query()` function returns `AsyncGenerator<SDKMessage, void>`. Currently only the final `result` message is captured (lines 114-118 of `index.ts`). The SDK yields:
+
+| SDK Message Type | Subtype | Useful Data | UI Treatment |
+|-----------------|---------|-------------|-------------|
+| `stream_event` | `content_block_delta` | `delta.text` (real-time text chunks) | Typewriter text in chat |
+| `assistant` | — | `message.content` (text blocks), `message.thinking` | Thinking accordion |
+| `tool_progress` | — | `tool_name`, `elapsed_time_seconds` | Animated tool pill with timer |
+| `tool_use_summary` | — | `summary`, `preceding_tool_use_ids` | Completed tool pill |
+| `system` | `task_started` | `description` | Status divider |
+| `system` | `task_progress` | `description`, `usage` | Progress update |
+| `result` | `success` | `result` text, `duration_ms`, `num_turns` | Summary card |
+| `result` | `error_*` | `error` message | Error card |
+
+**Key finding**: The SDK types are defined in `node_modules/@anthropic-ai/claude-agent-sdk/sdk.d.ts`. The `stream_event` type wraps Anthropic's `BetaRawMessageStreamEvent` which includes `content_block_start`, `content_block_delta`, `content_block_stop`, and message-level events.
+
+**Alternatives considered**:
+- Only forward `assistant` complete messages: Misses real-time text streaming and tool progress.
+- Forward raw SDK messages to frontend: Leaks SDK internals. Better to map to our own event types.
+- Normalized event types (chosen): Map SDK messages to a clean `StreamEvent` union type that the frontend can render without knowing SDK internals.
+
+### R25: Interactive chat architecture
+
+**Decision**: Lightweight conversational agent via `POST /chat` on agent server, streaming responses through the same SSE channel.
+
+**Rationale**:
+- Reuses the SSE infrastructure built for execution streaming — same `activeStreams` map, same `broadcastEvent` helper.
+- Chat uses `query()` with `maxTurns: 5` (vs 10-15 for investment execution) and a conversational system prompt.
+- Read-only MCP tools by default (rates, balances). Execution tools enabled only for explicit action requests ("invest $500 more").
+- Frontend sends POST, responses stream via SSE. No need for a separate streaming response — the `investmentId` SSE channel handles it.
+
+**Alternatives considered**:
+- Chat through NestJS API: Adds HTTP hop. Agent server already has MCP tools.
+- Streaming response body on the POST: More complex on frontend (ReadableStream parsing). SSE is already set up.
+- Separate SSE channel per chat session: Over-engineered. One channel per investmentId is sufficient.
+
+### R26: Frontend chat component architecture
+
+**Decision**: Single `AgentChat` component with two modes (live streaming / history), wrapping existing `AgentActions` as fallback.
+
+**Rationale**:
+- `AgentActions` already handles status badges, action icons, and the card layout. Keep it as the fallback when SSE is unavailable (late join, SSE error).
+- `AgentChat` adds: message list with different renderers per type, auto-scroll, chat input, quick-action chips.
+- No external UI library needed. Tailwind CSS can handle all the chat bubble styling, typewriter animations (via `animate-pulse`), and collapsible accordions (via state toggle).
+- Custom `useAgentStream` hook manages `EventSource` lifecycle and typed message dispatching.
+
+**Alternatives considered**:
+- Use a chat UI library (e.g., `react-chat-elements`): Adds dependency, doesn't match existing Tailwind design system.
+- Replace `AgentActions` entirely: Loses the clean static view for completed executions.
+- Build as a separate `/chat` route: Fragments the dashboard experience. Chat should be contextual to the active investment.

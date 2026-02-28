@@ -1,37 +1,36 @@
-# Implementation Plan: Async Agent Execution + Frontend Polling
+# Implementation Plan: Agent Chat Interface + Real-Time Thinking UI
 
 **Branch**: `001-risk-quiz-strategies` | **Date**: 2026-02-28 | **Spec**: `specs/001-risk-quiz-strategies/spec.md`
-**Input**: Agent execution times out after 120s. Need async fire-and-forget with callback + frontend polling.
+**Input**: Replace the static agent action list with a real-time chat interface showing the agent's thinking process, tool calls, and reasoning as it runs. Add interactive commands so users can ask questions and trigger actions.
 
 ## Summary
 
-The investment agent (Claude Agent SDK + MCP tools) takes 3–10 minutes to complete. The current synchronous HTTP call from the NestJS API to the agent server has a 120-second `AbortSignal.timeout` that kills the request before the agent finishes. The fix:
+The Claude Agent SDK `query()` yields rich intermediate messages (thinking, tool calls, progress, text deltas) that are currently discarded — only the final result is captured. This plan:
 
-1. **Agent server** responds `202 Accepted` immediately, runs agent in background, POSTs results back to API via callback
-2. **NestJS API** creates a "processing" marker action in DB, awaits only the 202 confirmation (5s), exposes callback endpoint
-3. **Frontend dashboard** polls `GET /investments/:id/actions` every 3 seconds until completion
-
-Architecture decision: **HTTP Polling** (not WebSocket, not SSE). See `research.md` R20 for full rationale.
+1. **Agent server** streams SDK messages to connected frontends via SSE (Server-Sent Events)
+2. **Frontend** replaces the static `AgentActions` list with a live `AgentChat` panel that renders thinking, tool executions, and results in real-time
+3. **Interactive chat** lets users type natural language commands ("What's my APY?", "Invest $500 more") that trigger lightweight agent queries
+4. **Polish**: browser notifications, yield projection card, quick-action chips
 
 ## Technical Context
 
 **Language/Version**: TypeScript 5.x (Node.js 20+)
-**Primary Dependencies**: NestJS 10 (API), Next.js 15/React 19 (frontend), `@anthropic-ai/claude-agent-sdk` + `@openfort/openfort-node` (agent)
+**Primary Dependencies**: Next.js 15 (App Router, React 19), NestJS 10, `@anthropic-ai/claude-agent-sdk`, Tailwind CSS
 **Storage**: PostgreSQL via MikroORM 6.4 (existing `agent_action` table)
-**Testing**: Jest (existing)
+**Testing**: Manual end-to-end (hackathon scope)
 **Target Platform**: Web (localhost development)
 **Project Type**: Monorepo (apps/api, apps/web, apps/agent)
-**Constraints**: Agent execution is 3-10 minutes; must not block HTTP connections
+**Constraints**: Agent execution 3-10 min; SSE for streaming; no new npm dependencies
 
 ## Constitution Check
 
 | Principle | Status | Notes |
 |-----------|--------|-------|
-| I. Security-First | PASS | No changes to fund flow or wallet access |
-| II. Zero-Friction UX | PASS | Polling gives real-time feedback without user action |
-| III. Guardrailed Autonomy | PASS | Agent still operates within policy constraints |
-| IV. Transparency & Trust | PASS | Processing marker + polling gives visibility into agent state |
-| V. Simplicity (YAGNI) | PASS | Polling over WebSocket/SSE; no new dependencies; reuses existing endpoint |
+| I. Security-First | PASS | No changes to fund flow or wallet access; chat commands use same policy-enforced tools |
+| II. Zero-Friction UX | PASS | Chat interface shows thinking in plain language; no DeFi jargon exposed |
+| III. Guardrailed Autonomy | PASS | Interactive commands use same MCP tool allowlist; no new capabilities |
+| IV. Transparency & Trust | **STRONG PASS** | This feature IS transparency — users see every step the agent takes in real-time |
+| V. Simplicity (YAGNI) | PASS | SSE over WebSocket; no new npm deps; reuses existing agent SDK streaming |
 
 ## Project Structure
 
@@ -41,239 +40,183 @@ Architecture decision: **HTTP Polling** (not WebSocket, not SSE). See `research.
 apps/
 ├── agent/
 │   ├── src/
-│   │   ├── server.ts              # MODIFY — respond 202, run async, callback
-│   │   └── index.ts               # NO CHANGE
-│   └── .env                       # ADD API_SERVICE_URL
-├── api/
-│   └── src/modules/investment/
-│       ├── application/
-│       │   └── execute-investment.use-case.ts   # MODIFY — 5s timeout, marker action, reportAgentResults()
-│       └── infrastructure/
-│           └── investment.controller.ts         # MODIFY — add POST /:id/actions/report
+│   │   ├── server.ts              # MODIFY — add SSE endpoint, CORS, broadcast infra, /chat
+│   │   ├── index.ts               # MODIFY — add onMessage callback to capture SDK events
+│   │   └── chat-prompt.ts         # NEW — conversational prompt for interactive queries
+│   └── .env                       # ADD NEXT_PUBLIC_AGENT_URL if needed
+├── api/                           # NO CHANGES — persisted actions stay as-is
 └── web/
     └── src/
-        ├── app/dashboard/page.tsx               # MODIFY — add polling useEffect
-        └── components/dashboard/
-            └── AgentActions.tsx                  # MODIFY — accept isProcessing prop
+        ├── app/dashboard/page.tsx              # MODIFY — wire AgentChat, remove polling
+        ├── hooks/useAgentStream.ts             # NEW — SSE EventSource hook
+        ├── components/dashboard/
+        │   ├── AgentChat.tsx                   # NEW — main chat panel
+        │   ├── AgentActions.tsx                # KEEP — fallback for non-streaming
+        │   └── YieldProjection.tsx             # NEW — projected earnings card (P2)
+        └── lib/api.ts                          # MODIFY — add sendAgentMessage()
 ```
 
 ## Implementation Details
 
-### 1. Agent Server — Async Execution (`apps/agent/src/server.ts`)
+### 1. Agent Server — Stream SDK Messages (`apps/agent/src/index.ts`)
 
-**Current**: `const result = await executeInvestment(params); send(res, 200, result);` — blocks until agent completes.
-
-**New**: Respond 202 immediately, run in background, POST callback when done.
-
-For both `/execute` and `/rebalance` handlers:
+**Current** (lines 114-118): The `for await` loop only captures `result`:
 ```typescript
-// Read body, respond immediately
-const params = (await readBody(req)) as ExecuteInvestmentParams;
-send(res, 202, { status: 'accepted', investmentId: params.investmentId });
-
-// Background execution + callback
-executeInvestment(params)
-  .then(async (result) => {
-    const apiUrl = process.env.API_SERVICE_URL ?? 'http://localhost:3001/api';
-    await fetch(`${apiUrl}/investments/${params.investmentId}/actions/report`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        userId: params.userId,
-        strategyId: params.strategy.id,
-        ...result,
-      }),
-    });
-    console.log(`[agent] callback sent for ${params.investmentId}`);
-  })
-  .catch((err) => {
-    console.error(`[agent] execution failed for ${params.investmentId}:`, err.message);
-    // Callback with failure
-    const apiUrl = process.env.API_SERVICE_URL ?? 'http://localhost:3001/api';
-    fetch(`${apiUrl}/investments/${params.investmentId}/actions/report`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        userId: params.userId,
-        strategyId: params.strategy.id,
-        actions: [{ actionType: 'rate_check', status: 'failed', rationale: `Agent failed: ${err.message}` }],
-        summary: `Execution failed: ${err.message}`,
-      }),
-    }).catch(() => {});
-  });
-return; // Already responded 202
-```
-
-For `/rebalance`, the callback body uses `strategyId: params.newStrategy.id`.
-
-**Env**: Add `API_SERVICE_URL=http://localhost:3001/api` to `apps/agent/.env` and `.env.example`.
-
-### 2. NestJS API — Execute Use Case (`apps/api/src/modules/investment/application/execute-investment.use-case.ts`)
-
-**Changes to `triggerAgent()` (lines 101-148)**:
-
-a) **Create processing marker** before sending HTTP request:
-```typescript
-const marker = AgentAction.create({
-  investmentId: params.investmentId,
-  userId: params.userId,
-  actionType: AgentActionType.RATE_CHECK,
-  strategyId: params.strategy.id,
-  chain: params.strategy.allowedChains[0] ?? 'base',
-  protocol: 'Aave v3',
-  asset: 'USDC',
-  amount: '0',
-  rationale: 'Agent is processing your investment...',
-});
-await this.agentActionRepo.save(marker);
-```
-
-b) **Shorten HTTP timeout** — only confirm 202 receipt (5 seconds):
-```typescript
-const response = await fetch(`${agentServiceUrl}/execute`, {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify(params),
-  signal: AbortSignal.timeout(5_000),
-});
-if (response.status !== 202) throw new Error(`Agent returned ${response.status}`);
-// Don't parse body — results arrive via callback
-```
-
-c) **Remove `saveAgentActions` from triggerAgent()** — moved to callback handler.
-
-d) **Same changes to `triggerRebalance()`** (lines 44-99).
-
-e) **New method `reportAgentResults()`**:
-```typescript
-async reportAgentResults(
-  investmentId: string,
-  userId: string,
-  strategyId: string,
-  actions: Array<{ actionType?: string; pool?: { chain: string; protocol: string; asset: string }; ... }>,
-): Promise<void> {
-  // Delete the processing marker
-  const existingActions = await this.agentActionRepo.findByInvestmentId(investmentId);
-  const marker = existingActions.find(
-    (a) => a.status === AgentActionStatus.PENDING && a.rationale.includes('Agent is processing'),
-  );
-  if (marker) await this.agentActionRepo.remove(marker);
-
-  // Save real actions
-  await this.saveAgentActions(investmentId, userId, strategyId, actions);
+for await (const message of agentQuery) {
+  if (message.type === 'result' && message.subtype === 'success') {
+    resultText = message.result;
+  }
 }
 ```
 
-### 3. NestJS Controller — Callback Endpoint (`apps/api/src/modules/investment/infrastructure/investment.controller.ts`)
+**New**: Add `onMessage?: (event: StreamEvent) => void` parameter to both `executeInvestment` and `rebalanceInvestment`. Expand the loop to emit all intermediate messages:
 
-Add after the existing `POST /execute` handler:
 ```typescript
-@Post(':investmentId/actions/report')
-@HttpCode(204)
-async reportActions(
-  @Param('investmentId') investmentId: string,
-  @Body() body: { userId: string; strategyId: string; actions: any[]; summary?: string },
-) {
-  await this.executeInvestmentUseCase.reportAgentResults(
-    investmentId, body.userId, body.strategyId, body.actions ?? [],
-  );
+type StreamEvent =
+  | { type: 'thinking'; text: string }
+  | { type: 'text'; text: string }
+  | { type: 'tool_start'; tool: string }
+  | { type: 'tool_progress'; tool: string; elapsed: number }
+  | { type: 'tool_result'; summary: string }
+  | { type: 'status'; description: string }
+  | { type: 'result'; text: string }
+  | { type: 'error'; message: string }
+  | { type: 'done' };
+```
+
+Handle each SDK message type:
+- `stream_event` with `content_block_delta` → emit `text` event (real-time text chunks)
+- `assistant` with `message.content` text blocks → emit `thinking` event
+- `tool_progress` → emit `tool_progress` with `tool_name` and `elapsed_time_seconds`
+- `tool_use_summary` → emit `tool_result` with `summary`
+- `system` with `task_started` → emit `status` with `description`
+- `result` → emit `result` (keep existing parsing logic intact)
+
+### 2. Agent Server — SSE Endpoint + CORS (`apps/agent/src/server.ts`)
+
+Add in-memory subscriber registry:
+```typescript
+const activeStreams = new Map<string, Set<http.ServerResponse>>();
+```
+
+**New route: `GET /stream/:investmentId`**
+- Parse investmentId from URL
+- Set SSE headers: `Content-Type: text/event-stream`, `Cache-Control: no-cache`, `Connection: keep-alive`
+- Set CORS: `Access-Control-Allow-Origin: http://localhost:3000`
+- Register response in `activeStreams` map
+- Send initial `event: connected\ndata: {}\n\n` heartbeat
+- Clean up on `req.close`
+
+**Helper: `broadcastEvent(investmentId, type, data)`**
+- Iterates all SSE subscribers for that investmentId
+- Writes `event: ${type}\ndata: ${JSON.stringify(data)}\n\n`
+
+**Modify `/execute` and `/rebalance`**: Pass `onMessage` callback that calls `broadcastEvent`. When execution completes, broadcast `done` event and clear subscribers.
+
+**Add CORS**: Handle `OPTIONS` preflight for all routes. Add `Access-Control-Allow-Origin: http://localhost:3000` to all responses.
+
+**New route: `POST /chat`** (interactive messages)
+- Body: `{ investmentId, userId, message, context: { strategy, portfolio } }`
+- Respond 202 immediately
+- Run lightweight agent query with conversational prompt
+- Stream responses via SSE to the same `investmentId` subscribers
+
+### 3. Agent — Chat Prompt (`apps/agent/src/chat-prompt.ts`, new)
+
+Lighter prompt for conversational queries (`maxTurns: 5`, same MCP tools minus execution tools by default):
+- System prompt knows user's current strategy, portfolio state, recent actions
+- Can answer: "What's my APY?", "Gas prices?", "Why did you skip that pool?"
+- For action requests like "Invest $500 more": re-enables execution tools and runs full investment
+
+### 4. Frontend — SSE Hook (`apps/web/src/hooks/useAgentStream.ts`, new)
+
+```typescript
+function useAgentStream(investmentId: string | null, isProcessing: boolean) {
+  // Returns { messages: ChatMessage[], isConnected: boolean }
 }
 ```
 
-### 4. Frontend — Dashboard Polling (`apps/web/src/app/dashboard/page.tsx`)
+- Creates `EventSource` to `http://localhost:3002/stream/${investmentId}`
+- Listens for typed events: `thinking`, `text`, `tool_start`, `tool_progress`, `tool_result`, `status`, `result`, `error`, `done`
+- Coalesces consecutive `text` events into single message (buffer)
+- Auto-cleans up on unmount
 
-Add a polling `useEffect` after the existing data-fetching effect:
+### 5. Frontend — Chat Panel (`apps/web/src/components/dashboard/AgentChat.tsx`, new)
 
+Replaces `<AgentActions>` in the dashboard. Two modes:
+
+**A) Live mode** (SSE connected, agent executing): Real-time message stream
+**B) History mode** (agent complete): Shows persisted actions + chat input
+
+Message rendering:
+
+| Event | Visual |
+|-------|--------|
+| `thinking` | Gray italic, collapsible "Agent reasoning..." accordion |
+| `text` | Left-aligned text bubble |
+| `tool_start` | Pill: "Calling aave_get_reserves..." with spinner |
+| `tool_progress` | Updated pill with elapsed time |
+| `tool_result` | Checkmark pill with summary |
+| `status` | Centered gray divider label |
+| `result` | Green-bordered summary card |
+| `error` | Red-bordered error card |
+| `user` | Right-aligned blue bubble |
+
+Component structure:
+- **Header**: "Agent Activity" + live/idle status dot (pulsing green when connected)
+- **Messages**: Scrollable list with auto-scroll via `useRef` + `scrollIntoView`
+- **Input**: Text field + send button + quick-action chips above
+- Quick actions: `[Check APY]` `[Gas prices]` `[Invest more]` `[Explain last action]`
+
+### 6. Frontend — Dashboard Integration (`apps/web/src/app/dashboard/page.tsx`)
+
+- Replace `<AgentActions actions={actions} isProcessing={...} />` with `<AgentChat>`
+- Add `handleSendMessage` → POST to `http://localhost:3002/chat`
+- Keep 3s polling as fallback for late-join scenarios
+- When SSE is connected, reduce polling to 10s (just for persistence sync)
+
+### 7. Frontend — API additions (`apps/web/src/lib/api.ts`)
+
+- Add `ChatMessage` discriminated union type
+- Add `sendAgentMessage(investmentId, userId, message)` → POST to agent server directly (bypasses NestJS API for hackathon simplicity)
+- Add `NEXT_PUBLIC_AGENT_URL` env var support
+
+### 8. Yield Projection Card (P2) (`apps/web/src/components/dashboard/YieldProjection.tsx`, new)
+
+Simple projected earnings card between InvestmentSummary and AgentChat:
+- Takes `investedAmount` and `apyPercent` props
+- Shows projections: 1mo / 3mo / 6mo / 12mo
+- Small SVG sparkline for visual appeal (no charting library)
+
+### 9. Browser Notifications (P2)
+
+In `useAgentStream`, when `result` event arrives:
 ```typescript
-// Poll agent actions every 3s while agent is processing
-useEffect(() => {
-  if (!investment) return;
-  const isProcessing = actions.length === 0 ||
-    (actions.length > 0 && actions.every((a) => a.status === 'pending'));
-  if (!isProcessing) return;
-
-  const startTime = Date.now();
-  const MAX_POLL_MS = 10 * 60 * 1000; // 10 minutes
-
-  const poll = setInterval(() => {
-    if (Date.now() - startTime > MAX_POLL_MS) {
-      clearInterval(poll);
-      return;
-    }
-    fetchAgentActions(investment.investmentId)
-      .then((res) => {
-        setActions(res.actions);
-        const done = res.actions.some((a) => a.status === 'executed' || a.status === 'failed');
-        if (done) clearInterval(poll);
-      })
-      .catch(() => {});
-  }, 3_000);
-
-  return () => clearInterval(poll);
-}, [investment, actions]);
-```
-
-### 5. Frontend — Processing State (`apps/web/src/components/dashboard/AgentActions.tsx`)
-
-Add `isProcessing` prop and show spinner when processing:
-
-```typescript
-interface AgentActionsProps {
-  actions: AgentAction[];
-  isProcessing?: boolean;  // NEW
+if (Notification.permission === 'granted') {
+  new Notification('Autopilot Savings', { body: 'Agent finished!' });
 }
-
-// In render, when actions are empty and isProcessing:
-if (actions.length === 0 && isProcessing) {
-  return (
-    <div className="...">
-      <h3>Agent activity</h3>
-      <div className="flex items-center gap-2 py-4">
-        <div className="animate-spin h-4 w-4 border-2 border-gray-400 border-t-transparent rounded-full" />
-        <p className="text-sm text-gray-500">Agent is processing your investment...</p>
-      </div>
-    </div>
-  );
-}
 ```
-
-In `dashboard/page.tsx`, pass `isProcessing`:
-```typescript
-const isProcessing = actions.length > 0 && actions.every((a) => a.status === 'pending');
-// ...
-<AgentActions actions={actions} isProcessing={isProcessing} />
-```
-
-### 6. Environment Variables
-
-**`apps/agent/.env`** — add:
-```
-API_SERVICE_URL=http://localhost:3001/api
-```
-
-**`apps/agent/.env.example`** — add:
-```
-API_SERVICE_URL=http://localhost:3001/api
-```
+Request permission on first dashboard visit.
 
 ## Files Changed Summary
 
-| File | Change Type | Description |
-|------|------------|-------------|
-| `apps/agent/src/server.ts` | Modify | Respond 202, run async, POST callback |
-| `apps/agent/.env` | Modify | Add `API_SERVICE_URL` |
-| `apps/agent/.env.example` | Modify | Add `API_SERVICE_URL` |
-| `apps/api/src/modules/investment/application/execute-investment.use-case.ts` | Modify | 5s timeout, marker action, `reportAgentResults()` |
-| `apps/api/src/modules/investment/infrastructure/investment.controller.ts` | Modify | Add `POST /:id/actions/report` |
-| `apps/web/src/app/dashboard/page.tsx` | Modify | Add polling `useEffect`, pass `isProcessing` |
-| `apps/web/src/components/dashboard/AgentActions.tsx` | Modify | Accept `isProcessing` prop, show spinner |
+| File | Change Type | Priority |
+|------|------------|----------|
+| `apps/agent/src/index.ts` | Modify | P0 |
+| `apps/agent/src/server.ts` | Modify | P0 |
+| `apps/agent/src/chat-prompt.ts` | New | P1 |
+| `apps/web/src/hooks/useAgentStream.ts` | New | P0 |
+| `apps/web/src/components/dashboard/AgentChat.tsx` | New | P0 |
+| `apps/web/src/app/dashboard/page.tsx` | Modify | P0 |
+| `apps/web/src/lib/api.ts` | Modify | P1 |
+| `apps/web/src/components/dashboard/YieldProjection.tsx` | New | P2 |
 
 ## Verification
 
 1. Start all services: Aave MCP (8080), agent (3002), API (3001), web (3000)
-2. Click "Start investing" on strategies page
-3. API returns immediately → redirects to dashboard
-4. Dashboard shows "Agent is processing..." with spinner
-5. After 3-10 min: agent completes → POSTs callback → dashboard auto-updates with executed actions
-6. Verify: `GET /investments/:id/actions` shows real actions (not just the processing marker)
-7. Edge case: stop agent server mid-execution → callback never arrives → marker stays pending → user sees "processing" state (can retry later via `POST /execute`)
+2. Click "Start investing" → dashboard shows AgentChat panel
+3. SSE connects → real-time messages appear: "Calling aave_get_reserves..." → tool result → agent thinking → "Supplying $X to Aave..." → tx confirmation → summary card
+4. After agent completes → browser notification → chat input becomes active
+5. Type "What's my current APY?" → agent responds with live rate data in chat
+6. Click "Invest more" chip → enter amount → new streaming execution starts
+7. Refresh page mid-execution → polling loads persisted actions, SSE reconnects for remaining events
