@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { Strategy } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 
@@ -8,6 +9,7 @@ interface StrategyDetailProps {
   onStartInvesting?: () => void;
   onSwitchStrategy?: () => void;
   hasActiveInvestment?: boolean;
+  isCurrentStrategy?: boolean;
   actionLoading?: boolean;
   userAmount?: string;
   onAmountChange?: (amount: string) => void;
@@ -24,6 +26,7 @@ export function StrategyDetail({
   onStartInvesting,
   onSwitchStrategy,
   hasActiveInvestment = false,
+  isCurrentStrategy = false,
   actionLoading = false,
   userAmount = '1000',
   onAmountChange,
@@ -76,7 +79,14 @@ export function StrategyDetail({
         </div>
       </div>
 
-      {(onStartInvesting || onSwitchStrategy) && (
+      {isCurrentStrategy ? (
+        <div className="flex items-center justify-between bg-green-50 border border-green-200 rounded-lg px-4 py-3">
+          <span className="text-sm font-medium text-green-700">✓ This is your active strategy</span>
+          <Link href="/dashboard" className="text-sm font-medium text-green-700 hover:text-green-900 underline underline-offset-2">
+            View dashboard →
+          </Link>
+        </div>
+      ) : (onStartInvesting || onSwitchStrategy) && (
         <div className="space-y-3">
           {onAmountChange && (
             <div>

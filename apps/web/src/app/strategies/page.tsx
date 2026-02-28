@@ -26,6 +26,7 @@ export default function StrategiesPage() {
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hasActiveInvestment, setHasActiveInvestment] = useState(false);
+  const [activeStrategyId, setActiveStrategyId] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [userAmount, setUserAmount] = useState('1000');
 
@@ -37,6 +38,7 @@ export default function StrategiesPage() {
     ]).then(([strategiesData, activeInvestment]) => {
       setStrategies(strategiesData.strategies);
       setHasActiveInvestment(!!activeInvestment);
+      setActiveStrategyId(activeInvestment?.strategy?.id ?? null);
       if (riskLevel) {
         const match = strategiesData.strategies.find((s) => s.riskLevel === riskLevel);
         if (match) setSelectedId(match.id);
@@ -46,6 +48,7 @@ export default function StrategiesPage() {
   }, [riskLevel]);
 
   const selected = strategies.find((s) => s.id === selectedId) ?? null;
+  const isCurrentStrategy = !!selected && selected.id === activeStrategyId;
 
   async function handleStartInvesting() {
     if (!selected) return;
@@ -111,7 +114,8 @@ export default function StrategiesPage() {
               <div className="mt-2">
                 <StrategyDetail
                   strategy={selected}
-                  hasActiveInvestment={hasActiveInvestment}
+                  hasActiveInvestment={hasActiveInvestment && !isCurrentStrategy}
+                  isCurrentStrategy={isCurrentStrategy}
                   onStartInvesting={handleStartInvesting}
                   onSwitchStrategy={handleSwitchStrategy}
                   actionLoading={actionLoading}
