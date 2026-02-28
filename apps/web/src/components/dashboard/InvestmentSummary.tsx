@@ -83,7 +83,7 @@ export function InvestmentSummary({ investment }: InvestmentSummaryProps) {
       </div>
 
       <Link
-        href="/strategies"
+        href={`/strategies?riskLevel=${strategy.riskLevel}`}
         className="block text-center text-sm text-gray-500 hover:text-gray-700 transition-colors"
       >
         Change strategy →

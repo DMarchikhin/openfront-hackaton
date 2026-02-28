@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { fetchStrategies, fetchActiveInvestment, startInvesting, Strategy } from '@/lib/api';
+import { fetchStrategies, fetchActiveInvestment, startInvesting, switchStrategy, Strategy } from '@/lib/api';
 import { StrategyCard } from '@/components/strategy/StrategyCard';
 import { StrategyDetail } from '@/components/strategy/StrategyDetail';
 
@@ -58,6 +58,18 @@ export default function StrategiesPage() {
     }
   }
 
+  async function handleSwitchStrategy() {
+    if (!selected) return;
+    setActionLoading(true);
+    try {
+      await switchStrategy({ userId: getUserId(), newStrategyId: selected.id });
+      router.push('/dashboard');
+    } catch {
+      setError('Could not switch strategy. Please try again.');
+      setActionLoading(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[40vh]">
@@ -100,6 +112,7 @@ export default function StrategiesPage() {
                   strategy={selected}
                   hasActiveInvestment={hasActiveInvestment}
                   onStartInvesting={handleStartInvesting}
+                  onSwitchStrategy={handleSwitchStrategy}
                   actionLoading={actionLoading}
                 />
               </div>

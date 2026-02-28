@@ -136,10 +136,10 @@
 
 ### Implementation for User Story 4
 
-- [ ] T040 [US4] Implement SwitchStrategy use case — injects InvestmentRepositoryPort and StrategyRepositoryPort, validates new strategy exists and differs from current, deactivates current UserInvestment, creates new active UserInvestment, persists both, returns old and new strategy details in apps/api/src/modules/investment/application/switch-strategy.use-case.ts
-- [ ] T041 [US4] Add PATCH /investments/switch endpoint (accepts userId + newStrategyId, returns previous and new strategy names per contracts/api.md) to InvestmentController in apps/api/src/modules/investment/infrastructure/investment.controller.ts. Register SwitchStrategy use case in InvestmentModule.
-- [ ] T042 [US4] Add "Change Strategy" button to dashboard page — on click, navigates to /strategies with current riskLevel pre-selected in apps/web/src/app/dashboard/page.tsx
-- [ ] T043 [US4] Update strategies page to detect active investment state — if user already has an active investment, show "Switch to this Strategy" instead of "Start Investing", call switchStrategy API on confirm, show comparison (old vs new APY), redirect to dashboard on success in apps/web/src/app/strategies/page.tsx
+- [x] T040 [US4] Implement SwitchStrategy use case — injects InvestmentRepositoryPort and StrategyRepositoryPort, validates new strategy exists and differs from current, deactivates current UserInvestment, creates new active UserInvestment, persists both, returns old and new strategy details in apps/api/src/modules/investment/application/switch-strategy.use-case.ts
+- [x] T041 [US4] Add PATCH /investments/switch endpoint (accepts userId + newStrategyId, returns previous and new strategy names per contracts/api.md) to InvestmentController in apps/api/src/modules/investment/infrastructure/investment.controller.ts. Register SwitchStrategy use case in InvestmentModule.
+- [x] T042 [US4] Add "Change Strategy" button to dashboard page — on click, navigates to /strategies with current riskLevel pre-selected in apps/web/src/app/dashboard/page.tsx
+- [x] T043 [US4] Update strategies page to detect active investment state — if user already has an active investment, show "Switch to this Strategy" instead of "Start Investing", call switchStrategy API on confirm, show comparison (old vs new APY), redirect to dashboard on success in apps/web/src/app/strategies/page.tsx
 
 **Checkpoint**: All 4 user stories work independently and together. Full product flow complete.
 

@@ -1,6 +1,7 @@
-import { Body, Controller, Get, HttpCode, Inject, NotFoundException, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Inject, NotFoundException, Patch, Post, Query } from '@nestjs/common';
 import { IsNotEmpty, IsString, IsUUID } from 'class-validator';
 import { StartInvestingUseCase } from '../application/start-investing.use-case';
+import { SwitchStrategyUseCase } from '../application/switch-strategy.use-case';
 import { InvestmentRepositoryPort } from '../domain/ports/investment.repository.port';
 import { StrategyRepositoryPort } from '../../strategy/domain/ports/strategy.repository.port';
 
@@ -13,10 +14,20 @@ class StartInvestingDto {
   strategyId: string;
 }
 
+class SwitchStrategyDto {
+  @IsString()
+  @IsNotEmpty()
+  userId: string;
+
+  @IsUUID()
+  newStrategyId: string;
+}
+
 @Controller('investments')
 export class InvestmentController {
   constructor(
     private readonly startInvestingUseCase: StartInvestingUseCase,
+    private readonly switchStrategyUseCase: SwitchStrategyUseCase,
     @Inject('InvestmentRepositoryPort')
     private readonly investmentRepo: InvestmentRepositoryPort,
     @Inject('StrategyRepositoryPort')
@@ -27,6 +38,11 @@ export class InvestmentController {
   @HttpCode(201)
   async start(@Body() body: StartInvestingDto) {
     return this.startInvestingUseCase.execute(body.userId, body.strategyId);
+  }
+
+  @Patch('switch')
+  async switch(@Body() body: SwitchStrategyDto) {
+    return this.switchStrategyUseCase.execute(body.userId, body.newStrategyId);
   }
 
   @Get('active')
