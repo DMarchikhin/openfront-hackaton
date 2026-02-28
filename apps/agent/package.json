@@ -1,0 +1,40 @@
+{
+  "name": "agent",
+  "version": "1.0.0",
+  "description": "Autopilot Savings Investment Agent — Claude Agent SDK",
+  "private": true,
+  "scripts": {
+    "start": "ts-node -r tsconfig-paths/register src/index.ts",
+    "build": "tsc",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:cov": "jest --coverage"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "latest",
+    "@openfort/openfort-node": "latest",
+    "dotenv": "^16.4.7",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.14",
+    "@types/node": "^22.10.7",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.2.5",
+    "ts-node": "^10.9.2",
+    "tsconfig-paths": "^4.2.0",
+    "typescript": "^5.7.3"
+  },
+  "jest": {
+    "moduleFileExtensions": ["js", "json", "ts"],
+    "rootDir": ".",
+    "testRegex": ".*\\.spec\\.ts$",
+    "transform": {
+      "^.+\\.(t|j)s$": "ts-jest"
+    },
+    "collectCoverageFrom": ["src/**/*.(t|j)s"],
+    "coverageDirectory": "coverage",
+    "testEnvironment": "node",
+    "roots": ["<rootDir>/src/"]
+  }
+}

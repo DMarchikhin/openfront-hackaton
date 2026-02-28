@@ -292,10 +292,10 @@ With 2 developers after Phase 2:
 
 **Purpose**: Scaffold `apps/agent` workspace app with Claude Agent SDK, Openfort SDK, TypeScript config, and environment setup.
 
-- [ ] T049 Create apps/agent/ directory with package.json (name: "agent", dependencies: @anthropic-ai/claude-agent-sdk, @openfort/openfort-node, zod, dotenv; devDependencies: typescript, ts-node, @types/node, jest, ts-jest, @types/jest), tsconfig.json (extends root, target ES2022, module NodeNext, moduleResolution NodeNext, outDir dist, rootDir src, strict true, esModuleInterop true, resolveJsonModule true), and Jest config in package.json (transform ts-jest, testRegex .spec.ts$, testEnvironment node)
-- [ ] T050 [P] Create apps/agent/.env.example with ANTHROPIC_API_KEY, OPENFORT_API_KEY, OPENFORT_PROJECT_ID, AAVE_MCP_URL=http://localhost:8080/mcp/sse, API_BASE_URL=http://localhost:3001/api, CHAIN_ID=84532, NODE_ENV=development
-- [ ] T051 [P] Add agent scripts to root package.json: "dev:agent": "pnpm --filter agent start", "dev:all": "concurrently \"pnpm --filter api dev\" \"pnpm --filter web dev\" \"pnpm --filter agent start\"". Add "start": "ts-node src/index.ts" and "test": "jest" scripts to apps/agent/package.json
-- [ ] T052 Run pnpm install from root to resolve new workspace dependencies
+- [x] T049 Create apps/agent/ directory with package.json (name: "agent", dependencies: @anthropic-ai/claude-agent-sdk, @openfort/openfort-node, zod, dotenv; devDependencies: typescript, ts-node, @types/node, jest, ts-jest, @types/jest), tsconfig.json (extends root, target ES2022, module NodeNext, moduleResolution NodeNext, outDir dist, rootDir src, strict true, esModuleInterop true, resolveJsonModule true), and Jest config in package.json (transform ts-jest, testRegex .spec.ts$, testEnvironment node)
+- [x] T050 [P] Create apps/agent/.env.example with ANTHROPIC_API_KEY, OPENFORT_API_KEY, OPENFORT_PROJECT_ID, AAVE_MCP_URL=http://localhost:8080/mcp/sse, API_BASE_URL=http://localhost:3001/api, CHAIN_ID=84532, NODE_ENV=development
+- [x] T051 [P] Add agent scripts to root package.json: "dev:agent": "pnpm --filter agent start", "dev:all": "concurrently \"pnpm --filter api dev\" \"pnpm --filter web dev\" \"pnpm --filter agent start\"". Add "start": "ts-node src/index.ts" and "test": "jest" scripts to apps/agent/package.json
+- [x] T052 Run pnpm install from root to resolve new workspace dependencies
 
 **Checkpoint**: `apps/agent` workspace is initialized, compiles cleanly, and recognized by pnpm workspaces.
 
