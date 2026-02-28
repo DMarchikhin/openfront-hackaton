@@ -15,4 +15,5 @@ export default defineConfig({
   },
   extensions: [Migrator],
   debug: process.env.NODE_ENV === 'development',
+  allowGlobalContext: true,
 });

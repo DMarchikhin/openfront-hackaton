@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(.specify/scripts/bash/check-prerequisites.sh:*)",
+      "Bash(npx tsc:*)",
+      "Bash(sed:*)"
+    ]
+  }
+}
