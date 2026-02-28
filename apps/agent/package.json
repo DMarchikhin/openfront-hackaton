@@ -5,6 +5,7 @@
   "private": true,
   "scripts": {
     "start": "tsx src/index.ts",
+    "server": "tsx src/server.ts",
     "build": "tsc",
     "test": "jest",
     "test:watch": "jest --watch",
