@@ -37,3 +37,8 @@ temp/
 
 # Misc
 *.tgz
+
+# Docker DB data – ignore contents, folder is kept via docker/db/data/.gitignore
+docker/db/data/*
+!docker/db/data/.gitignore
+

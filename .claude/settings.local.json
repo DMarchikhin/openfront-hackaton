@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(.specify/scripts/bash/check-prerequisites.sh:*)",
+      "Bash(npx tsc:*)",
+      "Bash(sed:*)",
+      "Bash(npx jest:*)",
+      "WebSearch",
+      "mcp__plugin_context7_context7__resolve-library-id",
+      "mcp__plugin_context7_context7__query-docs",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:glama.ai)",
+      "WebFetch(domain:www.openfort.io)",
+      "WebFetch(domain:www.npmjs.com)",
+      "Bash(pnpm install:*)",
+      "Bash(pnpm:*)",
+      "Bash(node_modules/.bin/tsx:*)",
+      "Bash(find:*)"
+    ]
+  }
+}
