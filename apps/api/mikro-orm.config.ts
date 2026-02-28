@@ -3,6 +3,8 @@ import { Migrator } from '@mikro-orm/migrations';
 import * as dotenv from 'dotenv';
 import { resolve } from 'path';
 
+// Try app root (watch mode CWD) then compiled dist dir
+dotenv.config({ path: resolve(process.cwd(), '.env') });
 dotenv.config({ path: resolve(__dirname, '.env') });
 
 export default defineConfig({

@@ -89,16 +89,16 @@
 
 ### Tests for User Story 2
 
-- [ ] T025 [P] [US2] Write unit tests for InvestmentStrategy entity in apps/api/test/unit/strategy/investment-strategy.entity.spec.ts — test cases: matchesRiskLevel() returns true for matching level, matchesRiskLevel() returns false for non-matching level, validateAllocations() passes when percentages sum to 100, validateAllocations() throws when percentages don't sum to 100
+- [x] T025 [P] [US2] Write unit tests for InvestmentStrategy entity in apps/api/test/unit/strategy/investment-strategy.entity.spec.ts — test cases: matchesRiskLevel() returns true for matching level, matchesRiskLevel() returns false for non-matching level, validateAllocations() passes when percentages sum to 100, validateAllocations() throws when percentages don't sum to 100
 
 ### Implementation for User Story 2
 
-- [ ] T026 [US2] Create StrategyRepositoryPort interface (findAll(): Promise<InvestmentStrategy[]>, findByRiskLevel(level): Promise<InvestmentStrategy[]>, findById(id): Promise<InvestmentStrategy|null>) in apps/api/src/modules/strategy/domain/ports/strategy.repository.port.ts and MikroORM adapter implementation in apps/api/src/modules/strategy/infrastructure/strategy.repository.ts
-- [ ] T027 [US2] Implement GetStrategies use case — injects StrategyRepositoryPort, returns all strategies optionally filtered by riskLevel query param in apps/api/src/modules/strategy/application/get-strategies.use-case.ts
-- [ ] T028 [US2] Create StrategyController with GET /strategies (optional ?riskLevel filter) and GET /strategies/:id endpoints per contracts/api.md in apps/api/src/modules/strategy/infrastructure/strategy.controller.ts. Create StrategyModule registering providers. Import in AppModule.
-- [ ] T029 [P] [US2] Create StrategyCard component (props: strategy object, isRecommended:boolean — displays name, risk level badge with color, APY range, chain icons/tags, highlighted border if recommended, onClick) in apps/web/src/components/strategy/StrategyCard.tsx
-- [ ] T030 [P] [US2] Create StrategyDetail component (props: strategy object — displays full pool allocation breakdown as percentage bars or list, allowed chains, rebalance threshold, explanation text for risk level match) in apps/web/src/components/strategy/StrategyDetail.tsx
-- [ ] T031 [US2] Create strategies page at apps/web/src/app/strategies/page.tsx — reads ?riskLevel from URL params, fetches all strategies from API, renders StrategyCard grid with recommended one highlighted, clicking a card expands/shows StrategyDetail below or in modal
+- [x] T026 [US2] Create StrategyRepositoryPort interface (findAll(): Promise<InvestmentStrategy[]>, findByRiskLevel(level): Promise<InvestmentStrategy[]>, findById(id): Promise<InvestmentStrategy|null>) in apps/api/src/modules/strategy/domain/ports/strategy.repository.port.ts and MikroORM adapter implementation in apps/api/src/modules/strategy/infrastructure/strategy.repository.ts
+- [x] T027 [US2] Implement GetStrategies use case — injects StrategyRepositoryPort, returns all strategies optionally filtered by riskLevel query param in apps/api/src/modules/strategy/application/get-strategies.use-case.ts
+- [x] T028 [US2] Create StrategyController with GET /strategies (optional ?riskLevel filter) and GET /strategies/:id endpoints per contracts/api.md in apps/api/src/modules/strategy/infrastructure/strategy.controller.ts. Create StrategyModule registering providers. Import in AppModule.
+- [x] T029 [P] [US2] Create StrategyCard component (props: strategy object, isRecommended:boolean — displays name, risk level badge with color, APY range, chain icons/tags, highlighted border if recommended, onClick) in apps/web/src/components/strategy/StrategyCard.tsx
+- [x] T030 [P] [US2] Create StrategyDetail component (props: strategy object — displays full pool allocation breakdown as percentage bars or list, allowed chains, rebalance threshold, explanation text for risk level match) in apps/web/src/components/strategy/StrategyDetail.tsx
+- [x] T031 [US2] Create strategies page at apps/web/src/app/strategies/page.tsx — reads ?riskLevel from URL params, fetches all strategies from API, renders StrategyCard grid with recommended one highlighted, clicking a card expands/shows StrategyDetail below or in modal
 
 **Checkpoint**: Users can view and explore all strategies after quiz. Quiz → Strategies flow works end-to-end.
 
