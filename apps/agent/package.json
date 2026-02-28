@@ -1,7 +1,7 @@
 {
   "name": "agent",
   "version": "1.0.0",
-  "description": "Autopilot Savings Investment Agent — Claude Agent SDK",
+  "description": "CondorFlow Investment Agent — Claude Agent SDK",
   "private": true,
   "scripts": {
     "start": "tsx src/index.ts",

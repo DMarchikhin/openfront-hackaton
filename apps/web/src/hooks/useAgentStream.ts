@@ -130,7 +130,7 @@ export function useAgentStream(
       addMessage({ type: 'result', text: data.text, duration: data.duration, turns: data.turns });
       // Browser notification
       if (typeof window !== 'undefined' && Notification.permission === 'granted') {
-        new Notification('Autopilot Savings', { body: 'Agent finished allocating your funds!' });
+        new Notification('CondorFlow', { body: 'Agent finished allocating your funds!' });
       }
     });
 

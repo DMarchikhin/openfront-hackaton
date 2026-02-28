@@ -230,6 +230,7 @@ const server = http.createServer(async (req, res) => {
 
     // Run conversational agent in background (read-only, maxTurns: 5)
     (async () => {
+      let textWasBroadcast = false;
       try {
         const agentQuery = query({
           prompt,
@@ -247,33 +248,47 @@ const server = http.createServer(async (req, res) => {
           },
         });
         for await (const msg of agentQuery) {
-          // Re-use the same handleSdkMessage logic via broadcastEvent
           if (msg.type === 'stream_event') {
             const ev = (msg as unknown as { event: { type: string; delta?: { type: string; text: string } } }).event;
             if (ev?.type === 'content_block_delta' && ev.delta?.type === 'text_delta') {
               broadcastEvent(investmentId, 'text', { text: ev.delta.text });
+              textWasBroadcast = true;
             }
           } else if (msg.type === 'assistant') {
-            const content = (msg as unknown as { message: { content: Array<{ type: string; text?: string; thinking?: string }> } }).message?.content ?? [];
+            const m = msg as unknown as { message: { content: Array<{ type: string; text?: string; thinking?: string }> }; error?: string };
+            if (m.error) {
+              console.error(`[agent] chat assistant error: ${m.error}`);
+              broadcastEvent(investmentId, 'error', { message: `Agent error: ${m.error}` });
+            }
+            const content = m.message?.content ?? [];
             for (const block of content) {
-              // text blocks are already streamed via stream_event → 'text' above; skip them
               if (block.type === 'thinking' && block.thinking) {
                 broadcastEvent(investmentId, 'thinking', { text: block.thinking });
               }
             }
           } else if (msg.type === 'tool_progress') {
-            const m = msg as unknown as { elapsed_time_seconds?: number; tool_name?: string };
-            if (m.elapsed_time_seconds != null) {
-              broadcastEvent(investmentId, 'tool_progress', { tool: m.tool_name ?? 'tool', elapsed: m.elapsed_time_seconds });
-            } else {
+            const m = msg as unknown as { elapsed_time_seconds: number; tool_name?: string };
+            if (m.elapsed_time_seconds < 0.5) {
               broadcastEvent(investmentId, 'tool_start', { tool: m.tool_name ?? 'tool' });
+            } else {
+              broadcastEvent(investmentId, 'tool_progress', { tool: m.tool_name ?? 'tool', elapsed: m.elapsed_time_seconds });
             }
           } else if (msg.type === 'tool_use_summary') {
-            const m = msg as unknown as { tool_name?: string; summary?: string };
-            broadcastEvent(investmentId, 'tool_result', { tool: m.tool_name ?? 'tool', summary: m.summary ?? '' });
+            const m = msg as unknown as { summary?: string };
+            broadcastEvent(investmentId, 'tool_result', { tool: 'tool', summary: m.summary ?? '' });
+          } else if (msg.type === 'result') {
+            const m = msg as unknown as { subtype: string; result?: string; errors?: string[] };
+            if (m.subtype === 'success' && m.result && !textWasBroadcast) {
+              broadcastEvent(investmentId, 'text', { text: m.result });
+            } else if (m.errors?.length) {
+              broadcastEvent(investmentId, 'error', { message: m.errors.join('; ') });
+            }
+          } else {
+            console.log(`[agent] chat unhandled msg type=${(msg as any).type}`);
           }
         }
       } catch (err) {
+        console.error(`[agent] chat failed for ${investmentId}:`, (err as Error).message);
         broadcastEvent(investmentId, 'error', { message: (err as Error).message });
       }
       broadcastEvent(investmentId, 'done', {});

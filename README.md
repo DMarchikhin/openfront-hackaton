@@ -1,4 +1,4 @@
-# Autopilot Savings — Risk Quiz & Investment Strategies
+# CondorFlow — Risk Quiz & Investment Strategies
 
 A full-stack web application that guides users through a short risk-profile quiz and recommends personalised investment strategies across DeFi liquidity pools. Users can review all available strategies, start investing with one click, and switch strategies at any time from their dashboard.
 

@@ -36,7 +36,7 @@ export const chatToolsAllowList = [
 export function buildChatPrompt(context: ChatContext): string {
   const contracts = CHAIN_CONTRACTS[context.chainId] ?? CHAIN_CONTRACTS[8453];
 
-  return `You are a friendly DeFi assistant for an autopilot savings app. The user is checking in on their investment.
+  return `You are a friendly DeFi assistant for CondorFlow. The user is checking in on their investment.
 
 ## User Context
 - Investment ID: ${context.investmentId}

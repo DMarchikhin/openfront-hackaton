@@ -1,10 +1,10 @@
 {
   "name": "api",
   "version": "1.0.0",
-  "description": "Autopilot Savings API - NestJS backend",
+  "description": "CondorFlow API - NestJS backend",
   "private": true,
   "scripts": {
-    "dev": "nest start --watch",
+    "dev": "ts-node --transpile-only -r tsconfig-paths/register src/main.ts",
     "build": "nest build",
     "start": "node dist/main",
     "test": "jest",
