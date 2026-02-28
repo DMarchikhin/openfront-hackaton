@@ -9,12 +9,14 @@
     "build": "tsc",
     "test": "jest",
     "test:watch": "jest --watch",
-    "test:cov": "jest --coverage"
+    "test:cov": "jest --coverage",
+    "setup:account": "tsx src/scripts/setup-account.ts"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "latest",
     "@openfort/openfort-node": "latest",
     "dotenv": "^16.4.7",
+    "viem": "^2.46.3",
     "zod": "^4.0.0"
   },
   "devDependencies": {
@@ -26,15 +28,23 @@
     "typescript": "^5.7.3"
   },
   "jest": {
-    "moduleFileExtensions": ["js", "json", "ts"],
+    "moduleFileExtensions": [
+      "js",
+      "json",
+      "ts"
+    ],
     "rootDir": ".",
     "testRegex": ".*\\.spec\\.ts$",
     "transform": {
       "^.+\\.(t|j)s$": "ts-jest"
     },
-    "collectCoverageFrom": ["src/**/*.(t|j)s"],
+    "collectCoverageFrom": [
+      "src/**/*.(t|j)s"
+    ],
     "coverageDirectory": "coverage",
     "testEnvironment": "node",
-    "roots": ["<rootDir>/src/"]
+    "roots": [
+      "<rootDir>/src/"
+    ]
   }
 }
