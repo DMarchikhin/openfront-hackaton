@@ -269,3 +269,105 @@ the most recent action has `status: "pending"`. Stops polling when:
 - An action with `status: "executed"` appears, OR
 - An action with `status: "failed"` appears, OR
 - 10 minutes elapse (timeout safety)
+
+---
+
+## Phase 6: Chat Agent API Data Tools
+
+### New MCP Server: `api-tools`
+
+In-process MCP server (`apps/agent/src/mcp/api-tools.ts`) that gives the
+chat agent read-only access to the NestJS API for answering user questions
+about their portfolio and agent action history.
+
+**Server name**: `api`
+
+### Tool: `get_investment_actions`
+
+Fetches agent action history for the current investment from the NestJS API.
+
+**Fully-qualified name**: `mcp__api__get_investment_actions`
+
+**Input**:
+```json
+{ "investmentId": "uuid" }
+```
+
+**Output**: JSON from `GET /investments/:investmentId/actions` (see API endpoint contract above).
+
+**Use case**: User asks "Explain last action", "What did the agent do?", "Show my transaction history".
+
+### Tool: `get_portfolio`
+
+Fetches portfolio state (balances, yield, per-pool breakdown) from the NestJS API.
+
+**Fully-qualified name**: `mcp__api__get_portfolio`
+
+**Input**:
+```json
+{ "userId": "user-123" }
+```
+
+**Output**: JSON from `GET /investments/portfolio?userId=X`:
+```json
+{
+  "investmentId": "uuid",
+  "strategyName": "Steady Growth",
+  "riskLevel": "balanced",
+  "totalValueUsd": 1005.20,
+  "totalInvestedUsd": 1000.00,
+  "totalEarnedUsd": 5.20,
+  "walletBalanceUsd": 50.00,
+  "investedBalanceUsd": 1005.20,
+  "smartAccountAddress": "0x...",
+  "pools": [
+    {
+      "pool": { "chain": "Base Sepolia", "protocol": "Aave V3", "asset": "USDC" },
+      "onChainBalanceUsd": 1005.20,
+      "netInvestedUsd": 1000.00,
+      "earnedYieldUsd": 5.20,
+      "latestApyPercent": 4.85,
+      "allocationPercent": 100
+    }
+  ]
+}
+```
+
+**Use case**: User asks "What's my balance?", "How much yield have I earned?", "What APY am I getting?".
+
+### Updated Chat Tools Allow-List
+
+```typescript
+export const chatToolsAllowList = [
+  'mcp__aave__aave_get_reserves',
+  'mcp__aave__get_gas_price',
+  'mcp__aave__get_balance',
+  'mcp__openfort__openfort_get_balance',
+  'mcp__api__get_investment_actions',   // NEW
+  'mcp__api__get_portfolio',            // NEW
+];
+```
+
+### Updated Chat System Prompt Context
+
+The agent's chat prompt MUST include `investmentId` and `userId` so it
+can pass them to the API tools:
+
+```
+## User Context
+- Investment ID: ${context.investmentId}
+- User ID: ${context.userId}
+- Current Strategy: ${context.strategyName} (${context.riskLevel} risk)
+- Wallet: ${context.walletAddress}
+- Network: ${contracts.name} (Chain ID: ${context.chainId})
+```
+
+Updated tool descriptions in the prompt:
+
+```
+- `aave_get_reserves` — get current supply APY rates across pools
+- `get_gas_price` — get current gas prices on the network
+- `get_balance` / `openfort_get_balance` — check on-chain wallet balance
+- `get_investment_actions` — get agent action history (supply/withdraw/rebalance) with rationale, amounts, APY
+- `get_portfolio` — get portfolio state: wallet balance, invested balance, earned yield, per-pool breakdown
+```

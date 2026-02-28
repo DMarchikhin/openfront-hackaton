@@ -202,7 +202,7 @@ export function AgentChat({ investmentId, actions, isProcessing, onSendMessage, 
       </div>
 
       {/* Message list */}
-      <div className="overflow-y-auto max-h-[500px] px-5 py-4 space-y-3">
+      <div className="overflow-y-auto max-h-[520px] px-5 py-4 space-y-3">
         {hasLiveMessages ? (
           allMessages.map((msg) => (
             <div key={msg.id}>
@@ -211,11 +211,7 @@ export function AgentChat({ investmentId, actions, isProcessing, onSendMessage, 
           ))
         ) : (
           // Fall back to persisted AgentActions when no live messages
-          <div className="-mx-5 -my-4">
-            <div className="px-5 py-4">
-              <AgentActions actions={actions} isProcessing={isProcessing} />
-            </div>
-          </div>
+          <AgentActions actions={actions} isProcessing={isProcessing} variant="inline" />
         )}
         <div ref={bottomRef} />
       </div>

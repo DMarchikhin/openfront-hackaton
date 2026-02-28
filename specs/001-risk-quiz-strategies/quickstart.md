@@ -173,8 +173,30 @@ apps/
 └── agent/        # Investment agent (Claude Agent SDK)
     └── src/
         ├── index.ts          # Entry point
-        ├── agent-prompt.ts   # System prompt
-        ├── mcp/              # Custom MCP tools (Openfort)
+        ├── server.ts         # HTTP server + SSE + chat
+        ├── agent-prompt.ts   # System prompt (execution)
+        ├── chat-prompt.ts    # System prompt (chat)
+        ├── mcp/
+        │   ├── aave-tools.ts     # Aave MCP wrapper
+        │   ├── openfort-tools.ts # Openfort SDK tools
+        │   └── api-tools.ts      # NestJS API tools (portfolio, actions)
         ├── domain/           # Allocation logic
         └── test/             # Unit tests
 ```
+
+## Chat Agent Data Tools (Phase 6)
+
+### Verify Chat Data Access
+
+After starting all services, open the dashboard and use the chat:
+
+1. Ask **"What's my balance?"** → agent should call `get_portfolio` and report wallet + invested USDC
+2. Ask **"Explain last action"** → agent should call `get_investment_actions` and describe the action
+3. Ask **"What APY am I getting?"** → agent should combine portfolio + live rates
+
+### Key Chat Files
+| File | Purpose |
+|------|---------|
+| `apps/agent/src/mcp/api-tools.ts` | In-process MCP server: `get_investment_actions`, `get_portfolio` |
+| `apps/agent/src/chat-prompt.ts` | Chat system prompt + tools allow-list |
+| `apps/agent/src/server.ts` | `/chat` handler — wires MCP servers to agent |

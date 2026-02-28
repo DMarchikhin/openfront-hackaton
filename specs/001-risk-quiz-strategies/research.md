@@ -423,3 +423,41 @@ earnedYield = onChainBalance - netInvested
 - Use a chat UI library (e.g., `react-chat-elements`): Adds dependency, doesn't match existing Tailwind design system.
 - Replace `AgentActions` entirely: Loses the clean static view for completed executions.
 - Build as a separate `/chat` route: Fragments the dashboard experience. Chat should be contextual to the active investment.
+
+---
+
+## Phase 6 Research (Chat Agent API Data Tools)
+
+### R27: Chat Agent API Data Access
+
+**Decision**: Add a new in-process MCP server (`api-tools`) with two read-only tools that call the existing NestJS API HTTP endpoints. Wire it as a third MCP server in the chat agent alongside `aave` and `openfort`.
+
+**Rationale**:
+- The chat agent currently only has blockchain tools (Aave MCP: `aave_get_reserves`, `get_gas_price`, `get_balance`; Openfort: `openfort_get_balance`). When users ask "What's my balance?" or "Explain last action", the agent cannot answer because it has no access to the app's database (agent actions, portfolio).
+- The NestJS API already exposes exactly the right endpoints:
+  - `GET /investments/:investmentId/actions` — full action history
+  - `GET /investments/portfolio?userId=X` — wallet balance, invested balance, yield, per-pool breakdown
+- An in-process MCP server lets the agent decide when to call these endpoints based on the user's question, rather than pre-fetching all data into the prompt (which wastes tokens and may be stale).
+- The `createSdkMcpServer` + `tool()` pattern is already used by `aave-tools.ts` and `openfort-tools.ts` — identical implementation approach.
+
+**Alternatives considered**:
+- **Embed data in system prompt** (pre-fetch before agent runs): Rejected — wastes tokens when user asks about APY rates (doesn't need portfolio), data could be stale, and adding context grows the prompt for every chat.
+- **Call API from server.ts and inject as context**: Rejected — same issues as above, plus the agent can't ask follow-up questions or decide it needs more data mid-conversation.
+- **Give the agent direct database access**: Rejected — violates separation of concerns, requires PostgreSQL + MikroORM in the agent process, and bypasses API validation.
+
+### R28: Chat Context Completeness
+
+**Decision**: Pass `investmentId` and `userId` through `ChatContext` to the system prompt, so the agent knows what IDs to pass to the new tools.
+
+**Rationale**: The `/chat` handler already receives `investmentId` and `userId` in the request body but discards `userId` and only uses `investmentId` for SSE routing. The `buildChatPrompt` function doesn't include these IDs — the agent has no way to call tools that require them.
+
+**What changes**:
+- `ChatContext` interface: add `investmentId: string` and `userId: string`
+- System prompt: include IDs in the context block
+- `server.ts` `/chat` handler: pass both fields to `buildChatPrompt`
+
+### R29: Tool Naming Convention
+
+**Decision**: MCP server name `api`, tool names `get_investment_actions` and `get_portfolio`. Fully-qualified: `mcp__api__get_investment_actions`, `mcp__api__get_portfolio`.
+
+**Rationale**: Follows existing convention (`mcp__aave__aave_get_reserves`, `mcp__openfort__openfort_get_balance`). Short server name avoids long tool references in the agent's reasoning.

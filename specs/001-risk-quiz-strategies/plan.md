@@ -1,222 +1,139 @@
-# Implementation Plan: Agent Chat Interface + Real-Time Thinking UI
+# Implementation Plan: Chat Agent — API Data Tools
 
-**Branch**: `001-risk-quiz-strategies` | **Date**: 2026-02-28 | **Spec**: `specs/001-risk-quiz-strategies/spec.md`
-**Input**: Replace the static agent action list with a real-time chat interface showing the agent's thinking process, tool calls, and reasoning as it runs. Add interactive commands so users can ask questions and trigger actions.
+**Branch**: `001-risk-quiz-strategies` | **Date**: 2026-02-28 | **Spec**: [spec.md](./spec.md)
+**Input**: The chat agent cannot answer user questions about balances, action history, or portfolio state because it only has blockchain-level tools (Aave MCP, Openfort balance check) and no way to query the app's own NestJS API.
 
 ## Summary
 
-The Claude Agent SDK `query()` yields rich intermediate messages (thinking, tool calls, progress, text deltas) that are currently discarded — only the final result is captured. This plan:
-
-1. **Agent server** streams SDK messages to connected frontends via SSE (Server-Sent Events)
-2. **Frontend** replaces the static `AgentActions` list with a live `AgentChat` panel that renders thinking, tool executions, and results in real-time
-3. **Interactive chat** lets users type natural language commands ("What's my APY?", "Invest $500 more") that trigger lightweight agent queries
-4. **Polish**: browser notifications, yield projection card, quick-action chips
+Add an in-process MCP server (`api-tools`) with two read-only tools that call the existing NestJS API endpoints (`GET /investments/:investmentId/actions` and `GET /investments/portfolio?userId=X`). Wire it into the chat agent and pass `investmentId`/`userId` through the chat prompt so the agent can look up action history and portfolio state when answering user questions.
 
 ## Technical Context
 
 **Language/Version**: TypeScript 5.x (Node.js 20+)
-**Primary Dependencies**: Next.js 15 (App Router, React 19), NestJS 10, `@anthropic-ai/claude-agent-sdk`, Tailwind CSS
-**Storage**: PostgreSQL via MikroORM 6.4 (existing `agent_action` table)
-**Testing**: Manual end-to-end (hackathon scope)
-**Target Platform**: Web (localhost development)
-**Project Type**: Monorepo (apps/api, apps/web, apps/agent)
-**Constraints**: Agent execution 3-10 min; SSE for streaming; no new npm dependencies
+**Primary Dependencies**: `@anthropic-ai/claude-agent-sdk`, `zod`
+**Storage**: N/A (reads from existing NestJS API over HTTP)
+**Testing**: Manual — start agent, ask questions in chat
+**Target Platform**: Node.js server (agent at port 3002)
+**Project Type**: Monorepo service (`apps/agent`)
+**Constraints**: Read-only tools only (chat mode must not execute transactions)
 
 ## Constitution Check
 
+*GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
+
 | Principle | Status | Notes |
 |-----------|--------|-------|
-| I. Security-First | PASS | No changes to fund flow or wallet access; chat commands use same policy-enforced tools |
-| II. Zero-Friction UX | PASS | Chat interface shows thinking in plain language; no DeFi jargon exposed |
-| III. Guardrailed Autonomy | PASS | Interactive commands use same MCP tool allowlist; no new capabilities |
-| IV. Transparency & Trust | **STRONG PASS** | This feature IS transparency — users see every step the agent takes in real-time |
-| V. Simplicity (YAGNI) | PASS | SSE over WebSocket; no new npm deps; reuses existing agent SDK streaming |
+| I. Security-First | PASS | New tools are read-only (GET endpoints). No fund movement. No new contract interactions. |
+| II. Zero-Friction UX | PASS | Users get better answers — the agent can now answer "What's my balance?" and "Explain last action" properly. |
+| III. Guardrailed Autonomy | PASS | Tools added to `chatToolsAllowList` only. Chat agent already restricted to `maxTurns: 5` and read-only mode. |
+| IV. Transparency & Trust | PASS | This directly enables the "Why?" explanation for agent actions — Principle IV requires this capability. |
+| V. Simplicity (YAGNI) | PASS | Minimal change: 1 new file, 2 modified files. Uses existing API endpoints — no new database queries. |
 
 ## Project Structure
 
-### Source Code
+### Documentation (this feature)
 
 ```text
-apps/
-├── agent/
-│   ├── src/
-│   │   ├── server.ts              # MODIFY — add SSE endpoint, CORS, broadcast infra, /chat
-│   │   ├── index.ts               # MODIFY — add onMessage callback to capture SDK events
-│   │   └── chat-prompt.ts         # NEW — conversational prompt for interactive queries
-│   └── .env                       # ADD NEXT_PUBLIC_AGENT_URL if needed
-├── api/                           # NO CHANGES — persisted actions stay as-is
-└── web/
-    └── src/
-        ├── app/dashboard/page.tsx              # MODIFY — wire AgentChat, remove polling
-        ├── hooks/useAgentStream.ts             # NEW — SSE EventSource hook
-        ├── components/dashboard/
-        │   ├── AgentChat.tsx                   # NEW — main chat panel
-        │   ├── AgentActions.tsx                # KEEP — fallback for non-streaming
-        │   └── YieldProjection.tsx             # NEW — projected earnings card (P2)
-        └── lib/api.ts                          # MODIFY — add sendAgentMessage()
+specs/001-risk-quiz-strategies/
+├── plan.md              # This file
+├── research.md          # Phase 0 output
+├── data-model.md        # Phase 1 output
+├── quickstart.md        # Phase 1 output
+└── contracts/           # Phase 1 output
 ```
+
+### Source Code (repository root)
+
+```text
+apps/agent/src/
+├── mcp/
+│   ├── aave-tools.ts        # Existing — Aave MCP wrapper
+│   ├── openfort-tools.ts    # Existing — Openfort SDK tools
+│   └── api-tools.ts         # NEW — NestJS API tools (get_investment_actions, get_portfolio)
+├── chat-prompt.ts           # MODIFY — add investmentId/userId to context, update allowlist + prompt
+├── server.ts                # MODIFY — wire api-tools into chat handler, pass IDs
+└── index.ts                 # Unchanged
+```
+
+**Structure Decision**: All changes are within `apps/agent/src/`. The new file follows the existing MCP adapter pattern established by `aave-tools.ts` and `openfort-tools.ts`.
+
+## Constitution Check — Post-Design
+
+| Principle | Status | Notes |
+|-----------|--------|-------|
+| I. Security-First | PASS | Tools call GET-only API endpoints. No new contract interactions. No fund movement possible. |
+| II. Zero-Friction UX | PASS | Users ask plain-English questions and get plain-English answers with real data. |
+| III. Guardrailed Autonomy | PASS | Tools in `chatToolsAllowList` only (no execution tools). Chat agent limited to `maxTurns: 5`. |
+| IV. Transparency & Trust | PASS | Directly enables "Why?" explanation for agent actions (Principle IV requirement). |
+| V. Simplicity (YAGNI) | PASS | 1 new file (87 lines), 2 edits (~15 lines each). Zero new dependencies. Reuses existing API endpoints. |
 
 ## Implementation Details
 
-### 1. Agent Server — Stream SDK Messages (`apps/agent/src/index.ts`)
+### File 1: `apps/agent/src/mcp/api-tools.ts` (NEW)
 
-**Current** (lines 114-118): The `for await` loop only captures `result`:
+In-process MCP server following the exact `aave-tools.ts` pattern:
+
 ```typescript
-for await (const message of agentQuery) {
-  if (message.type === 'result' && message.subtype === 'success') {
-    resultText = message.result;
-  }
+import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
+import { z } from 'zod';
+
+// Helper: format JSON response for agent consumption
+function textResult(data: unknown) {
+  return { content: [{ type: 'text' as const, text: typeof data === 'string' ? data : JSON.stringify(data) }] };
+}
+
+export function createApiMcpServer(apiBaseUrl: string) {
+  return createSdkMcpServer({
+    name: 'api',
+    version: '1.0.0',
+    tools: [
+      tool(
+        'get_investment_actions',
+        'Get agent action history for the current investment...',
+        { investmentId: z.string() },
+        async ({ investmentId }) => {
+          const res = await fetch(`${apiBaseUrl}/investments/${investmentId}/actions`, { signal: AbortSignal.timeout(10_000) });
+          if (!res.ok) throw new Error(`API returned ${res.status}`);
+          return textResult(await res.json());
+        },
+      ),
+      tool(
+        'get_portfolio',
+        'Get portfolio state: wallet balance, invested balance, earned yield, per-pool breakdown...',
+        { userId: z.string() },
+        async ({ userId }) => {
+          const res = await fetch(`${apiBaseUrl}/investments/portfolio?userId=${userId}`, { signal: AbortSignal.timeout(10_000) });
+          if (!res.ok) throw new Error(`API returned ${res.status}`);
+          return textResult(await res.json());
+        },
+      ),
+    ],
+  });
 }
 ```
 
-**New**: Add `onMessage?: (event: StreamEvent) => void` parameter to both `executeInvestment` and `rebalanceInvestment`. Expand the loop to emit all intermediate messages:
+### File 2: `apps/agent/src/chat-prompt.ts` (MODIFY)
 
-```typescript
-type StreamEvent =
-  | { type: 'thinking'; text: string }
-  | { type: 'text'; text: string }
-  | { type: 'tool_start'; tool: string }
-  | { type: 'tool_progress'; tool: string; elapsed: number }
-  | { type: 'tool_result'; summary: string }
-  | { type: 'status'; description: string }
-  | { type: 'result'; text: string }
-  | { type: 'error'; message: string }
-  | { type: 'done' };
-```
+1. Add `investmentId` and `userId` to `ChatContext`
+2. Add `mcp__api__get_investment_actions` and `mcp__api__get_portfolio` to `chatToolsAllowList`
+3. Embed IDs in system prompt + describe new tools
 
-Handle each SDK message type:
-- `stream_event` with `content_block_delta` → emit `text` event (real-time text chunks)
-- `assistant` with `message.content` text blocks → emit `thinking` event
-- `tool_progress` → emit `tool_progress` with `tool_name` and `elapsed_time_seconds`
-- `tool_use_summary` → emit `tool_result` with `summary`
-- `system` with `task_started` → emit `status` with `description`
-- `result` → emit `result` (keep existing parsing logic intact)
+### File 3: `apps/agent/src/server.ts` (MODIFY)
 
-### 2. Agent Server — SSE Endpoint + CORS (`apps/agent/src/server.ts`)
-
-Add in-memory subscriber registry:
-```typescript
-const activeStreams = new Map<string, Set<http.ServerResponse>>();
-```
-
-**New route: `GET /stream/:investmentId`**
-- Parse investmentId from URL
-- Set SSE headers: `Content-Type: text/event-stream`, `Cache-Control: no-cache`, `Connection: keep-alive`
-- Set CORS: `Access-Control-Allow-Origin: http://localhost:3000`
-- Register response in `activeStreams` map
-- Send initial `event: connected\ndata: {}\n\n` heartbeat
-- Clean up on `req.close`
-
-**Helper: `broadcastEvent(investmentId, type, data)`**
-- Iterates all SSE subscribers for that investmentId
-- Writes `event: ${type}\ndata: ${JSON.stringify(data)}\n\n`
-
-**Modify `/execute` and `/rebalance`**: Pass `onMessage` callback that calls `broadcastEvent`. When execution completes, broadcast `done` event and clear subscribers.
-
-**Add CORS**: Handle `OPTIONS` preflight for all routes. Add `Access-Control-Allow-Origin: http://localhost:3000` to all responses.
-
-**New route: `POST /chat`** (interactive messages)
-- Body: `{ investmentId, userId, message, context: { strategy, portfolio } }`
-- Respond 202 immediately
-- Run lightweight agent query with conversational prompt
-- Stream responses via SSE to the same `investmentId` subscribers
-
-### 3. Agent — Chat Prompt (`apps/agent/src/chat-prompt.ts`, new)
-
-Lighter prompt for conversational queries (`maxTurns: 5`, same MCP tools minus execution tools by default):
-- System prompt knows user's current strategy, portfolio state, recent actions
-- Can answer: "What's my APY?", "Gas prices?", "Why did you skip that pool?"
-- For action requests like "Invest $500 more": re-enables execution tools and runs full investment
-
-### 4. Frontend — SSE Hook (`apps/web/src/hooks/useAgentStream.ts`, new)
-
-```typescript
-function useAgentStream(investmentId: string | null, isProcessing: boolean) {
-  // Returns { messages: ChatMessage[], isConnected: boolean }
-}
-```
-
-- Creates `EventSource` to `http://localhost:3002/stream/${investmentId}`
-- Listens for typed events: `thinking`, `text`, `tool_start`, `tool_progress`, `tool_result`, `status`, `result`, `error`, `done`
-- Coalesces consecutive `text` events into single message (buffer)
-- Auto-cleans up on unmount
-
-### 5. Frontend — Chat Panel (`apps/web/src/components/dashboard/AgentChat.tsx`, new)
-
-Replaces `<AgentActions>` in the dashboard. Two modes:
-
-**A) Live mode** (SSE connected, agent executing): Real-time message stream
-**B) History mode** (agent complete): Shows persisted actions + chat input
-
-Message rendering:
-
-| Event | Visual |
-|-------|--------|
-| `thinking` | Gray italic, collapsible "Agent reasoning..." accordion |
-| `text` | Left-aligned text bubble |
-| `tool_start` | Pill: "Calling aave_get_reserves..." with spinner |
-| `tool_progress` | Updated pill with elapsed time |
-| `tool_result` | Checkmark pill with summary |
-| `status` | Centered gray divider label |
-| `result` | Green-bordered summary card |
-| `error` | Red-bordered error card |
-| `user` | Right-aligned blue bubble |
-
-Component structure:
-- **Header**: "Agent Activity" + live/idle status dot (pulsing green when connected)
-- **Messages**: Scrollable list with auto-scroll via `useRef` + `scrollIntoView`
-- **Input**: Text field + send button + quick-action chips above
-- Quick actions: `[Check APY]` `[Gas prices]` `[Invest more]` `[Explain last action]`
-
-### 6. Frontend — Dashboard Integration (`apps/web/src/app/dashboard/page.tsx`)
-
-- Replace `<AgentActions actions={actions} isProcessing={...} />` with `<AgentChat>`
-- Add `handleSendMessage` → POST to `http://localhost:3002/chat`
-- Keep 3s polling as fallback for late-join scenarios
-- When SSE is connected, reduce polling to 10s (just for persistence sync)
-
-### 7. Frontend — API additions (`apps/web/src/lib/api.ts`)
-
-- Add `ChatMessage` discriminated union type
-- Add `sendAgentMessage(investmentId, userId, message)` → POST to agent server directly (bypasses NestJS API for hackathon simplicity)
-- Add `NEXT_PUBLIC_AGENT_URL` env var support
-
-### 8. Yield Projection Card (P2) (`apps/web/src/components/dashboard/YieldProjection.tsx`, new)
-
-Simple projected earnings card between InvestmentSummary and AgentChat:
-- Takes `investedAmount` and `apyPercent` props
-- Shows projections: 1mo / 3mo / 6mo / 12mo
-- Small SVG sparkline for visual appeal (no charting library)
-
-### 9. Browser Notifications (P2)
-
-In `useAgentStream`, when `result` event arrives:
-```typescript
-if (Notification.permission === 'granted') {
-  new Notification('Autopilot Savings', { body: 'Agent finished!' });
-}
-```
-Request permission on first dashboard visit.
-
-## Files Changed Summary
-
-| File | Change Type | Priority |
-|------|------------|----------|
-| `apps/agent/src/index.ts` | Modify | P0 |
-| `apps/agent/src/server.ts` | Modify | P0 |
-| `apps/agent/src/chat-prompt.ts` | New | P1 |
-| `apps/web/src/hooks/useAgentStream.ts` | New | P0 |
-| `apps/web/src/components/dashboard/AgentChat.tsx` | New | P0 |
-| `apps/web/src/app/dashboard/page.tsx` | Modify | P0 |
-| `apps/web/src/lib/api.ts` | Modify | P1 |
-| `apps/web/src/components/dashboard/YieldProjection.tsx` | New | P2 |
+In `/chat` handler:
+1. Import `createApiMcpServer`
+2. Pass `investmentId` + `userId` to `buildChatPrompt`
+3. Add `api: createApiMcpServer(...)` to `mcpServers` in `query()` call
 
 ## Verification
 
-1. Start all services: Aave MCP (8080), agent (3002), API (3001), web (3000)
-2. Click "Start investing" → dashboard shows AgentChat panel
-3. SSE connects → real-time messages appear: "Calling aave_get_reserves..." → tool result → agent thinking → "Supplying $X to Aave..." → tx confirmation → summary card
-4. After agent completes → browser notification → chat input becomes active
-5. Type "What's my current APY?" → agent responds with live rate data in chat
-6. Click "Invest more" chip → enter amount → new streaming execution starts
-7. Refresh page mid-execution → polling loads persisted actions, SSE reconnects for remaining events
+1. Start all services (`pnpm dev` from root + `env -u CLAUDECODE tsx src/server.ts` in `apps/agent/`)
+2. Open `http://localhost:3000/dashboard`
+3. Ask **"What's my balance?"** → agent calls `get_portfolio`, reports wallet + invested amounts
+4. Ask **"Explain last action"** → agent calls `get_investment_actions`, describes most recent action
+5. Ask **"What APY am I getting?"** → agent combines `get_portfolio` + `aave_get_reserves`
+6. Ask **"Gas prices"** → still works (existing `get_gas_price` tool unchanged)
+
+## Complexity Tracking
+
+No violations. Single new file + two focused edits.

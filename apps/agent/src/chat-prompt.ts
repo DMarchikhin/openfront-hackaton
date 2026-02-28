@@ -19,6 +19,8 @@ export interface ChatContext {
   riskLevel: string;
   walletAddress: string;
   chainId: number;
+  investmentId: string;
+  userId: string;
 }
 
 // Read-only tools available for conversational queries (no transaction execution)
@@ -27,6 +29,8 @@ export const chatToolsAllowList = [
   'mcp__aave__get_gas_price',
   'mcp__aave__get_balance',
   'mcp__openfort__openfort_get_balance',
+  'mcp__api__get_investment_actions',
+  'mcp__api__get_portfolio',
 ];
 
 export function buildChatPrompt(context: ChatContext): string {
@@ -35,6 +39,8 @@ export function buildChatPrompt(context: ChatContext): string {
   return `You are a friendly DeFi assistant for an autopilot savings app. The user is checking in on their investment.
 
 ## User Context
+- Investment ID: ${context.investmentId}
+- User ID: ${context.userId}
 - Current Strategy: ${context.strategyName} (${context.riskLevel} risk)
 - Wallet: ${context.walletAddress}
 - Network: ${contracts.name} (Chain ID: ${context.chainId})
@@ -44,7 +50,9 @@ export function buildChatPrompt(context: ChatContext): string {
 Answer the user's question concisely (2-3 sentences max). Use the available tools to fetch live data when needed:
 - \`aave_get_reserves\` — get current supply APY rates across pools
 - \`get_gas_price\` — get current gas prices on the network
-- \`get_balance\` / \`openfort_get_balance\` — check wallet balance
+- \`get_balance\` / \`openfort_get_balance\` — check on-chain wallet balance
+- \`get_investment_actions\` — get agent action history (supply/withdraw/rebalance) with rationale, status, amounts, APY before/after
+- \`get_portfolio\` — get portfolio state: wallet balance, invested balance, earned yield, per-pool breakdown with latest APY
 
 ## Response Style
 - Plain English, no DeFi jargon

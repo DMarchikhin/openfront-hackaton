@@ -172,29 +172,35 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="max-w-xl mx-auto space-y-4">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Your dashboard</h1>
-        <p className="mt-1 text-sm text-gray-500">Your savings are working automatically.</p>
+    <div className="w-full">
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 items-start">
+        <div className="lg:col-span-3 space-y-4">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Your dashboard</h1>
+            <p className="mt-1 text-sm text-gray-500">Your savings are working automatically.</p>
+          </div>
+          <WalletSummary {...walletSummaryProps} />
+          <InvestmentSummary investment={investment} />
+          {portfolio && <PortfolioSection pools={portfolio.pools} />}
+          {portfolio && portfolio.investedBalanceUsd > 0 && (() => {
+            // Weighted-average APY from pool positions, fallback to strategy expectedApyMin
+            const pools = portfolio.pools.filter((p) => p.latestApyPercent != null);
+            const weightedApy = pools.length > 0
+              ? pools.reduce((sum, p) => sum + (p.latestApyPercent ?? 0) * (p.allocationPercent / 100), 0)
+              : investment.strategy.expectedApyMin;
+            return <YieldProjection investedAmount={portfolio.investedBalanceUsd} apyPercent={weightedApy} />;
+          })()}
+        </div>
+        <div className="lg:col-span-2 sticky top-6">
+          <AgentChat
+            investmentId={investment.investmentId}
+            actions={actions}
+            isProcessing={actions.length === 0 || actions.every((a) => a.status === 'pending')}
+            onSendMessage={handleSendMessage}
+            investment={investment}
+          />
+        </div>
       </div>
-      <WalletSummary {...walletSummaryProps} />
-      <InvestmentSummary investment={investment} />
-      {portfolio && <PortfolioSection pools={portfolio.pools} />}
-      {portfolio && portfolio.investedBalanceUsd > 0 && (() => {
-        // Weighted-average APY from pool positions, fallback to strategy expectedApyMin
-        const pools = portfolio.pools.filter((p) => p.latestApyPercent != null);
-        const weightedApy = pools.length > 0
-          ? pools.reduce((sum, p) => sum + (p.latestApyPercent ?? 0) * (p.allocationPercent / 100), 0)
-          : investment.strategy.expectedApyMin;
-        return <YieldProjection investedAmount={portfolio.investedBalanceUsd} apyPercent={weightedApy} />;
-      })()}
-      <AgentChat
-        investmentId={investment.investmentId}
-        actions={actions}
-        isProcessing={actions.length === 0 || actions.every((a) => a.status === 'pending')}
-        onSendMessage={handleSendMessage}
-        investment={investment}
-      />
     </div>
   );
 }

@@ -832,3 +832,69 @@ Task T103: "Integrate into dashboard"
 2. US10 Streaming UI → Live thinking panel → Demo checkpoint
 3. US11 Interactive Chat → User can ask questions → Demo checkpoint
 4. Polish → Notifications, yield projections → Final demo
+
+---
+
+## Phase 23: Chat Agent — API Data Tools (US11 enhancement)
+
+**Goal**: Give the chat agent access to the app's own NestJS API so it can answer user questions about portfolio state and agent action history. Currently the chat agent only has blockchain-level tools and responds "I don't have access to transaction history" when asked about balances or past actions.
+
+**Independent Test**: Start all services, open dashboard, ask "What's my balance?" → agent should report wallet + invested USDC amounts from the portfolio endpoint. Ask "Explain last action" → agent should describe the most recent agent action with rationale and status.
+
+### Implementation
+
+- [x] T112 [P] [US11] Create in-process API MCP server in `apps/agent/src/mcp/api-tools.ts` — export `createApiMcpServer(apiBaseUrl: string)` that returns `createSdkMcpServer({ name: 'api', version: '1.0.0', tools: [...] })`. Follow exact pattern from `apps/agent/src/mcp/aave-tools.ts`. Add `textResult()` helper (same as aave-tools). Add two tools: (1) `get_investment_actions` with schema `{ investmentId: z.string().describe('The investment ID') }` — calls `GET ${apiBaseUrl}/investments/${investmentId}/actions` with `AbortSignal.timeout(10_000)`, returns full JSON response via `textResult()`. (2) `get_portfolio` with schema `{ userId: z.string().describe('The user ID') }` — calls `GET ${apiBaseUrl}/investments/portfolio?userId=${userId}` with `AbortSignal.timeout(10_000)`, returns full JSON response via `textResult()`. Both tools throw on non-OK response (`throw new Error(\`API returned ${res.status}\`)`).
+
+- [x] T113 [US11] Update chat prompt context and tool allow-list in `apps/agent/src/chat-prompt.ts` — (1) Add `investmentId: string` and `userId: string` fields to `ChatContext` interface. (2) Add `'mcp__api__get_investment_actions'` and `'mcp__api__get_portfolio'` to the `chatToolsAllowList` array. (3) In `buildChatPrompt()`: add `Investment ID: ${context.investmentId}` and `User ID: ${context.userId}` to the "User Context" section of the prompt. Add two new lines to the tool descriptions: `- \`get_investment_actions\` — get agent action history (supply/withdraw/rebalance) with rationale, status, amounts, APY before/after` and `- \`get_portfolio\` — get portfolio state: wallet balance, invested balance, earned yield, per-pool breakdown with latest APY`.
+
+- [x] T114 [US11] Wire API MCP server into chat handler in `apps/agent/src/server.ts` — (1) Add import: `import { createApiMcpServer } from './mcp/api-tools.js';` alongside existing aave/openfort imports. (2) In the `POST /chat` handler: destructure `userId` from `body` (it's already in the body type but currently only `investmentId, message, context` are destructured). Pass `investmentId` and `userId` to `buildChatPrompt`: change `buildChatPrompt({ message, chainId, ...context })` to `buildChatPrompt({ message, chainId, investmentId, userId, ...context })`. (3) Add `api: createApiMcpServer(process.env.API_SERVICE_URL ?? 'http://localhost:3001/api')` to the `mcpServers` object in the `query()` call (alongside existing `aave` and `openfort` servers).
+
+- [ ] T115 [US11] End-to-end verification of chat data tools — start all services (`env -u CLAUDECODE tsx src/server.ts` from `apps/agent/`, `pnpm dev` from `apps/api/`, `pnpm dev` from `apps/web/`). Open `http://localhost:3000/dashboard`. Test: (1) Ask "What's my balance?" → agent should call `get_portfolio` tool and report wallet USDC + invested USDC amounts. (2) Ask "Explain last action" → agent should call `get_investment_actions` tool and describe the most recent action including rationale and status. (3) Ask "What APY am I getting?" → agent should combine `get_portfolio` (for invested amount) with `aave_get_reserves` (for current rates). (4) Ask "Gas prices" → should still work as before (existing `get_gas_price` tool unchanged). (5) Verify no duplicate tool calls or errors in agent server console.
+
+**Checkpoint**: Chat agent can answer user questions about their portfolio, action history, balances, and yield — using live data from both the NestJS API and blockchain tools.
+
+---
+
+## Dependencies & Execution Order (Phase 5 — Chat API Tools)
+
+### Phase Dependencies
+
+- **Phase 23**: Depends on Phase 21 (US11 Interactive Chat) — needs `/chat` endpoint, `buildChatPrompt`, `chatToolsAllowList`, and `AgentChat` component in place.
+
+### Task Dependencies
+
+- **T112** is parallel-safe (new file, no deps on T113/T114)
+- **T113** depends on nothing within phase (modifies existing `chat-prompt.ts`)
+- **T114** depends on T112 + T113 (imports `createApiMcpServer` from T112, uses updated `ChatContext` from T113)
+- **T115** depends on T112 + T113 + T114 (all three must be complete for verification)
+
+### Parallel Opportunities
+
+- T112 + T113 can run in parallel (different files: `api-tools.ts` vs `chat-prompt.ts`)
+- T114 depends on both (imports from both files)
+
+---
+
+## Parallel Example: Chat API Tools (Phase 23)
+
+```bash
+# Parallel (different files):
+Task T112: "Create api-tools.ts MCP server"    # parallel
+Task T113: "Update chat-prompt.ts context/allowlist"  # parallel
+
+# Sequential (depends on both above):
+Task T114: "Wire into server.ts /chat handler"
+
+# Verification (depends on all above):
+Task T115: "End-to-end verification"
+```
+
+---
+
+## Implementation Strategy (Phase 5 — Chat API Tools)
+
+### Execution Order
+
+1. T112 + T113 in parallel (new MCP server + prompt updates)
+2. T114 (wire into server.ts — needs both T112 and T113)
+3. T115 (end-to-end verification — needs all three)

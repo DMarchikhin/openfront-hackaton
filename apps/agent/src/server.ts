@@ -7,6 +7,7 @@ import { executeInvestment, rebalanceInvestment, ExecuteInvestmentParams, Rebala
 import { buildChatPrompt, chatToolsAllowList } from './chat-prompt.js';
 import { createAaveMcpServer } from './mcp/aave-tools.js';
 import { createOpenfortMcpServer } from './mcp/openfort-tools.js';
+import { createApiMcpServer } from './mcp/api-tools.js';
 
 const PORT = parseInt(process.env.AGENT_PORT ?? '3002', 10);
 const CORS_ORIGIN = process.env.CORS_ORIGIN ?? 'http://localhost:3000';
@@ -217,12 +218,12 @@ const server = http.createServer(async (req, res) => {
       message: string;
       context: { strategyName: string; strategyId: string; riskLevel: string; walletAddress: string };
     };
-    const { investmentId, message, context } = body;
+    const { investmentId, userId, message, context } = body;
     console.log(`[agent] chat investmentId=${investmentId} message="${message.slice(0, 60)}"`);
     send(res, 202, { status: 'accepted', investmentId });
 
     const chainId = parseInt(process.env.CHAIN_ID ?? '84532', 10);
-    const prompt = buildChatPrompt({ message, chainId, ...context });
+    const prompt = buildChatPrompt({ message, chainId, investmentId, userId, ...context });
     const onMessage = (event: StreamEvent) => {
       broadcastEvent(investmentId, event.type, event as unknown as Record<string, unknown>);
     };
@@ -233,7 +234,11 @@ const server = http.createServer(async (req, res) => {
         const agentQuery = query({
           prompt,
           options: {
-            mcpServers: { aave: createAaveMcpServer(), openfort: createOpenfortMcpServer() },
+            mcpServers: {
+              aave: createAaveMcpServer(),
+              openfort: createOpenfortMcpServer(),
+              api: createApiMcpServer(process.env.API_SERVICE_URL ?? 'http://localhost:3001/api'),
+            },
             allowedTools: chatToolsAllowList,
             permissionMode: 'bypassPermissions',
             allowDangerouslySkipPermissions: true,
