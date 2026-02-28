@@ -64,6 +64,8 @@ export interface ActiveInvestment {
   status: 'active' | 'inactive';
   activatedAt: string;
   agentMessage?: string;
+  totalActions?: number;
+  lastAgentAction?: { actionType: string; status: string; executedAt: string } | null;
 }
 
 export interface AgentAction {
@@ -102,6 +104,7 @@ export interface StartInvestingRequest {
 export interface SwitchStrategyRequest {
   userId: string;
   newStrategyId: string;
+  userAmount: string;
 }
 
 // --- API functions ---

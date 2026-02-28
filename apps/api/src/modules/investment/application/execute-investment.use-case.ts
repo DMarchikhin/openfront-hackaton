@@ -41,6 +41,63 @@ export class ExecuteInvestmentUseCase {
     };
   }
 
+  async triggerRebalance(params: {
+    investmentId: string;
+    userId: string;
+    walletAddress: string;
+    totalAmountUsd: number;
+    previousStrategy: { id: string; name: string; poolAllocations: any[]; allowedChains: string[] };
+    newStrategy: { id: string; name: string; riskLevel: string; poolAllocations: any[]; rebalanceThreshold: number; allowedChains: string[] };
+  }): Promise<void> {
+    const agentServiceUrl = process.env.AGENT_SERVICE_URL;
+
+    if (agentServiceUrl) {
+      try {
+        const response = await fetch(`${agentServiceUrl}/rebalance`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(params),
+          signal: AbortSignal.timeout(30_000),
+        });
+        if (!response.ok) throw new Error(`Agent service returned ${response.status}`);
+        const result = (await response.json()) as { actions?: any[] };
+        if (result.actions) {
+          await this.saveAgentActions(params.investmentId, params.userId, params.newStrategy.id, result.actions);
+        }
+      } catch (err) {
+        this.logger.error(`Agent rebalance failed: ${(err as Error).message}`);
+        await this.createFailedAction(params.investmentId, params.userId, params.newStrategy.id, (err as Error).message);
+      }
+    } else {
+      this.logger.log(`AGENT_SERVICE_URL not set — creating pending rebalance action for ${params.investmentId}`);
+      const withdrawAction = AgentAction.create({
+        investmentId: params.investmentId,
+        userId: params.userId,
+        actionType: AgentActionType.WITHDRAW,
+        strategyId: params.previousStrategy.id,
+        chain: params.previousStrategy.allowedChains[0] ?? 'base',
+        protocol: 'Aave v3',
+        asset: 'USDC',
+        amount: String(params.totalAmountUsd),
+        rationale: `Rebalance queued: withdraw from ${params.previousStrategy.name}. Set AGENT_SERVICE_URL to enable live execution.`,
+      });
+      await this.agentActionRepo.save(withdrawAction);
+
+      const supplyAction = AgentAction.create({
+        investmentId: params.investmentId,
+        userId: params.userId,
+        actionType: AgentActionType.SUPPLY,
+        strategyId: params.newStrategy.id,
+        chain: params.newStrategy.allowedChains[0] ?? 'base',
+        protocol: 'Aave v3',
+        asset: 'USDC',
+        amount: String(params.totalAmountUsd),
+        rationale: `Rebalance queued: supply to ${params.newStrategy.name} pools. Set AGENT_SERVICE_URL to enable live execution.`,
+      });
+      await this.agentActionRepo.save(supplyAction);
+    }
+  }
+
   private async triggerAgent(params: {
     investmentId: string;
     userId: string;

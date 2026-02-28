@@ -27,6 +27,10 @@ class SwitchStrategyDto {
 
   @IsUUID()
   newStrategyId: string;
+
+  @IsString()
+  @IsNotEmpty()
+  userAmount: string;
 }
 
 class ExecuteInvestmentDto {
@@ -60,7 +64,7 @@ export class InvestmentController {
 
   @Patch('switch')
   async switch(@Body() body: SwitchStrategyDto) {
-    return this.switchStrategyUseCase.execute(body.userId, body.newStrategyId);
+    return this.switchStrategyUseCase.execute(body.userId, body.newStrategyId, parseFloat(body.userAmount));
   }
 
   @Get('active')
@@ -72,6 +76,9 @@ export class InvestmentController {
 
     const strategy = await this.strategyRepo.findById(investment.strategyId);
     if (!strategy) throw new NotFoundException('Strategy not found');
+
+    const actions = await this.agentActionRepo.findByInvestmentId(investment.id);
+    const lastAction = actions.at(-1);
 
     return {
       investmentId: investment.id,
@@ -90,6 +97,10 @@ export class InvestmentController {
       },
       status: investment.status,
       activatedAt: investment.activatedAt.toISOString(),
+      totalActions: actions.length,
+      lastAgentAction: lastAction
+        ? { actionType: lastAction.actionType, status: lastAction.status, executedAt: lastAction.executedAt.toISOString() }
+        : null,
     };
   }
 

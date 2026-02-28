@@ -348,9 +348,9 @@ With 2 developers after Phase 2:
 
 **Independent Test**: Switch from one strategy to another, verify agent withdraws from old pools and supplies to new pools, verify AgentAction records show both withdraw and supply actions with rationale.
 
-- [ ] T065 [US6] Add rebalance mode to agent prompt in apps/agent/src/agent-prompt.ts — export function buildRebalancePrompt(context: RebalanceContext): string. Context includes: previousStrategy (with pool allocations), newStrategy (with pool allocations), currentPositions. Prompt instructs Claude to: (1) check current positions via aave_get_user_positions, (2) withdraw from pools not in new strategy, (3) supply to new pools per new allocation percentages, (4) skip moves where gas cost exceeds benefit (constitution principle III), (5) return structured JSON with all actions.
-- [ ] T066 [US6] Add rebalanceInvestment() function to apps/agent/src/index.ts — similar to executeInvestment but uses buildRebalancePrompt(), includes both withdraw and supply tool permissions (mcp__aave__aave_withdraw added to allowedTools)
-- [ ] T067 [US6] Wire agent trigger into SwitchStrategy use case in apps/api/src/modules/investment/application/switch-strategy.use-case.ts — after switching investment records, trigger agent rebalanceInvestment() (fire-and-forget async) passing old strategy, new strategy, and user wallet. Save AgentAction records for both withdraw and supply operations.
+- [x] T065 [US6] Add rebalance mode to agent prompt in apps/agent/src/agent-prompt.ts — export function buildRebalancePrompt(context: RebalanceContext): string. Context includes: previousStrategy (with pool allocations), newStrategy (with pool allocations), currentPositions. Prompt instructs Claude to: (1) check current positions via aave_get_user_positions, (2) withdraw from pools not in new strategy, (3) supply to new pools per new allocation percentages, (4) skip moves where gas cost exceeds benefit (constitution principle III), (5) return structured JSON with all actions.
+- [x] T066 [US6] Add rebalanceInvestment() function to apps/agent/src/index.ts — similar to executeInvestment but uses buildRebalancePrompt(), includes both withdraw and supply tool permissions (mcp__aave__aave_withdraw added to allowedTools)
+- [x] T067 [US6] Wire agent trigger into SwitchStrategy use case in apps/api/src/modules/investment/application/switch-strategy.use-case.ts — after switching investment records, trigger agent rebalanceInvestment() (fire-and-forget async) passing old strategy, new strategy, and user wallet. Save AgentAction records for both withdraw and supply operations.
 
 **Checkpoint**: Strategy switching triggers intelligent rebalancing — agent withdraws from old pools, supplies to new pools, skips moves where gas exceeds benefit.
 
@@ -362,9 +362,9 @@ With 2 developers after Phase 2:
 
 **Independent Test**: After agent executes, navigate to dashboard, verify agent action log shows each action (supply/withdraw/skip) with amount, pool, APY, gas cost, and plain-English rationale.
 
-- [ ] T068 [P] [US7] Create AgentActions component in apps/web/src/components/dashboard/AgentActions.tsx — props: actions: AgentAction[]. Renders a timeline/list of agent actions with: icon per actionType (supply ↗, withdraw ↙, skip ⏸), pool name (protocol + chain), amount, expected APY, gas cost, status badge (executed/skipped/failed with color coding), rationale text in plain English, timestamp. Empty state: "Your agent hasn't taken any actions yet."
-- [ ] T069 [US7] Update dashboard page at apps/web/src/app/dashboard/page.tsx — after InvestmentSummary, fetch agent actions via fetchAgentActions(investmentId), render AgentActions component below the summary. Add "Agent Activity" section header. Show loading state while fetching actions.
-- [ ] T070 [US7] Add "Investing..." status indicator to dashboard — when investment status is active but no agent actions exist yet, show a pulsing indicator with "Agent is analyzing pools and optimizing your allocation..." message in apps/web/src/components/dashboard/InvestmentSummary.tsx
+- [x] T068 [P] [US7] Create AgentActions component in apps/web/src/components/dashboard/AgentActions.tsx — props: actions: AgentAction[]. Renders a timeline/list of agent actions with: icon per actionType (supply ↗, withdraw ↙, skip ⏸), pool name (protocol + chain), amount, expected APY, gas cost, status badge (executed/skipped/failed with color coding), rationale text in plain English, timestamp. Empty state: "Your agent hasn't taken any actions yet."
+- [x] T069 [US7] Update dashboard page at apps/web/src/app/dashboard/page.tsx — after InvestmentSummary, fetch agent actions via fetchAgentActions(investmentId), render AgentActions component below the summary. Add "Agent Activity" section header. Show loading state while fetching actions.
+- [x] T070 [US7] Add "Investing..." status indicator to dashboard — when investment status is active but no agent actions exist yet, show a pulsing indicator with "Agent is analyzing pools and optimizing your allocation..." message in apps/web/src/components/dashboard/InvestmentSummary.tsx
 
 **Checkpoint**: Dashboard shows full transparency of agent decisions — users can see exactly what the agent did and why (constitution principle IV).
 
@@ -374,9 +374,9 @@ With 2 developers after Phase 2:
 
 **Purpose**: End-to-end validation, error handling, and polish across agent features
 
-- [ ] T071 [P] Add error handling to agent execution — wrap query() call in try/catch in apps/agent/src/index.ts, on failure create AgentAction with status "failed" and error rationale, ensure partial results are still saved. Add timeout (30 seconds) to agent execution.
-- [ ] T072 [P] Add ANTHROPIC_API_KEY validation on agent startup in apps/agent/src/index.ts — throw clear error if missing. Add Openfort API key validation in apps/agent/src/mcp/openfort-tools.ts. Log MCP server connection status on init.
-- [ ] T073 [P] Add agent action status summary to GET /investments/active response in apps/api/src/modules/investment/infrastructure/investment.controller.ts — include lastAgentAction: { actionType, status, executedAt } and totalActions count alongside existing fields
+- [x] T071 [P] Add error handling to agent execution — wrap query() call in try/catch in apps/agent/src/index.ts, on failure create AgentAction with status "failed" and error rationale, ensure partial results are still saved. Add timeout (30 seconds) to agent execution.
+- [x] T072 [P] Add ANTHROPIC_API_KEY validation on agent startup in apps/agent/src/index.ts — throw clear error if missing. Add Openfort API key validation in apps/agent/src/mcp/openfort-tools.ts. Log MCP server connection status on init.
+- [x] T073 [P] Add agent action status summary to GET /investments/active response in apps/api/src/modules/investment/infrastructure/investment.controller.ts — include lastAgentAction: { actionType, status, executedAt } and totalActions count alongside existing fields
 - [ ] T074 Run full end-to-end validation — start all services (API, Web, Agent, Aave MCP), walk through: home → quiz → result → strategies → start investing → verify agent executes → dashboard shows summary + agent actions → change strategy → verify agent rebalances → dashboard updates. Verify all constitution principles are met (security: policy-enforced txs, transparency: rationale visible, autonomy: cost-benefit checks applied).
 
 ---

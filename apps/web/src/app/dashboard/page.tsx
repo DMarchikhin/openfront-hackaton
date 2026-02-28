@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { fetchActiveInvestment, ActiveInvestment } from '@/lib/api';
+import { fetchActiveInvestment, fetchAgentActions, ActiveInvestment, AgentAction } from '@/lib/api';
 import { InvestmentSummary } from '@/components/dashboard/InvestmentSummary';
+import { AgentActions } from '@/components/dashboard/AgentActions';
 
 function getUserId(): string {
   if (typeof window === 'undefined') return 'user-ssr';
@@ -17,11 +18,16 @@ function getUserId(): string {
 
 export default function DashboardPage() {
   const [investment, setInvestment] = useState<ActiveInvestment | null>(null);
+  const [actions, setActions] = useState<AgentAction[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     fetchActiveInvestment(getUserId())
-      .then(setInvestment)
+      .then((inv) => {
+        setInvestment(inv);
+        return fetchAgentActions(inv.investmentId).catch(() => ({ investmentId: inv.investmentId, actions: [] }));
+      })
+      .then((res) => setActions(res.actions))
       .catch(() => setInvestment(null))
       .finally(() => setLoading(false));
   }, []);
@@ -66,6 +72,9 @@ export default function DashboardPage() {
         <p className="mt-1 text-sm text-gray-500">Your savings are working automatically.</p>
       </div>
       <InvestmentSummary investment={investment} />
+      <div className="mt-4">
+        <AgentActions actions={actions} />
+      </div>
     </div>
   );
 }
