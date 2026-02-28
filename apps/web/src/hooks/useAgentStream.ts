@@ -5,15 +5,14 @@ import { AGENT_URL, ChatMessage } from '@/lib/api';
 
 export function useAgentStream(
   investmentId: string | null,
-  isProcessing: boolean,
 ): { messages: ChatMessage[]; isConnected: boolean } {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [isConnected, setIsConnected] = useState(false);
+  const [isStreaming, setIsStreaming] = useState(false);
   const esRef = useRef<EventSource | null>(null);
   const textBufferIdRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!investmentId || !isProcessing) {
+    if (!investmentId) {
       return;
     }
 
@@ -34,16 +33,18 @@ export function useAgentStream(
     };
 
     es.addEventListener('connected', () => {
-      setIsConnected(true);
+      // SSE open — don't set isStreaming yet; wait for actual content
     });
 
     es.addEventListener('thinking', (e) => {
+      setIsStreaming(true);
       const data = JSON.parse(e.data) as { text: string };
       textBufferIdRef.current = null;
       addMessage({ type: 'thinking', text: data.text });
     });
 
     es.addEventListener('text', (e) => {
+      setIsStreaming(true);
       const data = JSON.parse(e.data) as { text: string };
       setMessages((prev) => {
         const last = prev[prev.length - 1];
@@ -61,12 +62,14 @@ export function useAgentStream(
     });
 
     es.addEventListener('tool_start', (e) => {
+      setIsStreaming(true);
       const data = JSON.parse(e.data) as { tool: string };
       textBufferIdRef.current = null;
       addMessage({ type: 'tool_start', tool: data.tool });
     });
 
     es.addEventListener('tool_progress', (e) => {
+      setIsStreaming(true);
       const data = JSON.parse(e.data) as { tool: string; elapsed: number };
       textBufferIdRef.current = null;
       setMessages((prev) => {
@@ -90,6 +93,7 @@ export function useAgentStream(
     });
 
     es.addEventListener('tool_result', (e) => {
+      setIsStreaming(true);
       const data = JSON.parse(e.data) as { tool: string; summary: string };
       textBufferIdRef.current = null;
       setMessages((prev) => {
@@ -113,12 +117,14 @@ export function useAgentStream(
     });
 
     es.addEventListener('status', (e) => {
+      setIsStreaming(true);
       const data = JSON.parse(e.data) as { description: string };
       textBufferIdRef.current = null;
       addMessage({ type: 'status', description: data.description });
     });
 
     es.addEventListener('result', (e) => {
+      setIsStreaming(true);
       const data = JSON.parse(e.data) as { text: string; duration?: number; turns?: number };
       textBufferIdRef.current = null;
       addMessage({ type: 'result', text: data.text, duration: data.duration, turns: data.turns });
@@ -129,6 +135,7 @@ export function useAgentStream(
     });
 
     es.addEventListener('error', (e) => {
+      setIsStreaming(true);
       textBufferIdRef.current = null;
       try {
         const data = JSON.parse((e as MessageEvent).data) as { message: string };
@@ -139,20 +146,19 @@ export function useAgentStream(
     });
 
     es.addEventListener('done', () => {
-      setIsConnected(false);
-      es.close();
-      esRef.current = null;
+      setIsStreaming(false);
+      // Keep EventSource alive for follow-up chat messages
     });
 
     es.onerror = () => {
-      setIsConnected(false);
+      setIsStreaming(false);
     };
 
     return () => {
       es.close();
       esRef.current = null;
     };
-  }, [investmentId, isProcessing]);
+  }, [investmentId]);
 
   // Request notification permission on first mount
   useEffect(() => {
@@ -161,5 +167,5 @@ export function useAgentStream(
     }
   }, []);
 
-  return { messages, isConnected };
+  return { messages, isConnected: isStreaming };
 }

@@ -146,13 +146,11 @@ const server = http.createServer(async (req, res) => {
         });
         console.log(`[agent] callback sent for ${params.investmentId}`);
         broadcastEvent(params.investmentId, 'done', {});
-        activeStreams.delete(params.investmentId);
       })
       .catch((err) => {
         console.error(`[agent] execution failed for ${params.investmentId}:`, (err as Error).message);
         broadcastEvent(params.investmentId, 'error', { message: (err as Error).message });
         broadcastEvent(params.investmentId, 'done', {});
-        activeStreams.delete(params.investmentId);
         const apiUrl = process.env.API_SERVICE_URL ?? 'http://localhost:3001/api';
         fetch(`${apiUrl}/investments/${params.investmentId}/actions/report`, {
           method: 'POST',
@@ -192,13 +190,11 @@ const server = http.createServer(async (req, res) => {
         });
         console.log(`[agent] rebalance callback sent for ${params.investmentId}`);
         broadcastEvent(params.investmentId, 'done', {});
-        activeStreams.delete(params.investmentId);
       })
       .catch((err) => {
         console.error(`[agent] rebalance failed for ${params.investmentId}:`, (err as Error).message);
         broadcastEvent(params.investmentId, 'error', { message: (err as Error).message });
         broadcastEvent(params.investmentId, 'done', {});
-        activeStreams.delete(params.investmentId);
         const apiUrl = process.env.API_SERVICE_URL ?? 'http://localhost:3001/api';
         fetch(`${apiUrl}/investments/${params.investmentId}/actions/report`, {
           method: 'POST',

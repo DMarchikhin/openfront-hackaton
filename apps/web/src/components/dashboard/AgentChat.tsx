@@ -134,7 +134,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
 }
 
 export function AgentChat({ investmentId, actions, isProcessing, onSendMessage, investment }: AgentChatProps) {
-  const { messages: streamMessages, isConnected } = useAgentStream(investmentId, isProcessing);
+  const { messages: streamMessages, isConnected } = useAgentStream(investmentId);
   const [localMessages, setLocalMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -195,7 +195,7 @@ export function AgentChat({ investmentId, actions, isProcessing, onSendMessage, 
           ) : (
             <>
               <span className="h-2 w-2 rounded-full bg-gray-300" />
-              <span className="text-xs text-gray-400">Idle</span>
+              <span className="text-xs text-gray-400">Ready</span>
             </>
           )}
         </div>
