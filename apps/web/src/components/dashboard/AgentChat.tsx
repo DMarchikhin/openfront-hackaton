@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
+import ReactMarkdown from 'react-markdown';
 import { AgentAction, ActiveInvestment, ChatMessage } from '@/lib/api';
 import { AgentActions } from './AgentActions';
 import { Button } from '@/components/ui/button';
@@ -9,6 +10,29 @@ import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 
 const QUICK_ACTIONS = ['Check my APY', 'Gas prices', "What's my balance?", 'Explain last action'];
+
+function Md({ children }: { children: string }) {
+  return (
+    <ReactMarkdown
+      components={{
+        p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+        strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+        ul: ({ children }) => <ul className="list-disc pl-4 mb-2 space-y-0.5">{children}</ul>,
+        ol: ({ children }) => <ol className="list-decimal pl-4 mb-2 space-y-0.5">{children}</ol>,
+        li: ({ children }) => <li className="text-sm">{children}</li>,
+        code: ({ children }) => <code className="bg-muted px-1 py-0.5 rounded text-xs font-mono">{children}</code>,
+        pre: ({ children }) => <pre className="bg-muted rounded p-2 overflow-x-auto text-xs my-2 font-mono">{children}</pre>,
+        table: ({ children }) => <div className="overflow-x-auto my-2"><table className="text-xs border-collapse w-full">{children}</table></div>,
+        th: ({ children }) => <th className="border border-border px-2 py-1 text-left font-semibold bg-muted">{children}</th>,
+        td: ({ children }) => <td className="border border-border px-2 py-1">{children}</td>,
+        hr: () => <hr className="my-2 border-border" />,
+        a: ({ href, children }) => <a href={href} className="underline hover:no-underline" target="_blank" rel="noopener noreferrer">{children}</a>,
+      }}
+    >
+      {children}
+    </ReactMarkdown>
+  );
+}
 
 interface AgentChatProps {
   investmentId: string;
@@ -85,7 +109,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
     case 'text':
       return (
         <div className="bg-card border rounded-2xl rounded-tl-sm px-4 py-2.5 text-sm max-w-[85%] leading-relaxed shadow-sm">
-          {message.text}
+          <div className="text-sm"><Md>{message.text}</Md></div>
         </div>
       );
 
@@ -107,7 +131,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
       return (
         <div className="border border-green-200 bg-green-50 rounded-xl p-4 text-sm text-green-800">
           <div className="font-semibold mb-1 text-green-700">Execution complete</div>
-          <p className="leading-relaxed whitespace-pre-wrap">{message.text}</p>
+          <div className="text-sm text-green-800"><Md>{message.text}</Md></div>
           {(message.duration != null || message.turns != null) && (
             <div className="flex gap-3 mt-2 text-xs text-green-600">
               {message.duration != null && <span>{(message.duration / 1000).toFixed(0)}s</span>}
