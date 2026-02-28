@@ -33,6 +33,7 @@
     "uuid": "^11.0.5"
   },
   "devDependencies": {
+    "@mikro-orm/cli": "^6.6.7",
     "@nestjs/cli": "^10.4.9",
     "@nestjs/testing": "^10.4.15",
     "@types/jest": "^29.5.14",
@@ -45,15 +46,31 @@
     "typescript": "^5.7.3"
   },
   "jest": {
-    "moduleFileExtensions": ["js", "json", "ts"],
+    "moduleFileExtensions": [
+      "js",
+      "json",
+      "ts"
+    ],
     "rootDir": ".",
     "testRegex": ".*\\.spec\\.ts$",
     "transform": {
       "^.+\\.(t|j)s$": "ts-jest"
     },
-    "collectCoverageFrom": ["src/**/*.(t|j)s"],
+    "collectCoverageFrom": [
+      "src/**/*.(t|j)s"
+    ],
     "coverageDirectory": "coverage",
     "testEnvironment": "node",
-    "roots": ["<rootDir>/test/", "<rootDir>/src/"]
+    "roots": [
+      "<rootDir>/test/",
+      "<rootDir>/src/"
+    ]
+  },
+  "mikro-orm": {
+    "useTsNode": true,
+    "configPaths": [
+      "./src/mikro-orm.config.ts",
+      "./dist/mikro-orm.config.js"
+    ]
   }
 }
