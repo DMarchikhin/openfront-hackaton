@@ -1,133 +1,279 @@
-# Implementation Plan: Portfolio Dashboard — Current Pools & Transaction History
+# Implementation Plan: Async Agent Execution + Frontend Polling
 
-**Branch**: `001-risk-quiz-strategies` | **Date**: 2026-02-28 | **Spec**: [spec.md](./spec.md)
-**Input**: User request: "Adding current portfolio showing what pools we have and transaction history linked to each pool to dashboard."
+**Branch**: `001-risk-quiz-strategies` | **Date**: 2026-02-28 | **Spec**: `specs/001-risk-quiz-strategies/spec.md`
+**Input**: Agent execution times out after 120s. Need async fire-and-forget with callback + frontend polling.
 
 ## Summary
 
-Add a **portfolio section** to the existing dashboard that shows the user's current on-chain positions (aToken balances per pool) and a per-pool transaction history view. The system reads live aToken balances from the blockchain, correlates them with `AgentAction` records from the database, and renders a pool-centric portfolio view with drill-down transaction history.
+The investment agent (Claude Agent SDK + MCP tools) takes 3–10 minutes to complete. The current synchronous HTTP call from the NestJS API to the agent server has a 120-second `AbortSignal.timeout` that kills the request before the agent finishes. The fix:
+
+1. **Agent server** responds `202 Accepted` immediately, runs agent in background, POSTs results back to API via callback
+2. **NestJS API** creates a "processing" marker action in DB, awaits only the 202 confirmation (5s), exposes callback endpoint
+3. **Frontend dashboard** polls `GET /investments/:id/actions` every 3 seconds until completion
+
+Architecture decision: **HTTP Polling** (not WebSocket, not SSE). See `research.md` R20 for full rationale.
 
 ## Technical Context
 
 **Language/Version**: TypeScript 5.x (Node.js 20+)
-**Primary Dependencies**: Next.js 15 (App Router), NestJS 10, MikroORM 6.4, viem, Tailwind CSS
-**Storage**: PostgreSQL (existing `agent_action`, `user_investment`, `investment_strategy` tables)
-**Testing**: Manual integration testing (hackathon scope)
-**Target Platform**: Web (localhost:3000 dashboard)
-**Project Type**: Monorepo web application (apps/web + apps/api + apps/agent)
-**Constraints**: Base Sepolia testnet only, USDC only, Aave V3 only
+**Primary Dependencies**: NestJS 10 (API), Next.js 15/React 19 (frontend), `@anthropic-ai/claude-agent-sdk` + `@openfort/openfort-node` (agent)
+**Storage**: PostgreSQL via MikroORM 6.4 (existing `agent_action` table)
+**Testing**: Jest (existing)
+**Target Platform**: Web (localhost development)
+**Project Type**: Monorepo (apps/api, apps/web, apps/agent)
+**Constraints**: Agent execution is 3-10 minutes; must not block HTTP connections
 
 ## Constitution Check
 
-*GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
-
 | Principle | Status | Notes |
 |-----------|--------|-------|
-| I. Security-First | PASS | Read-only on-chain calls (balanceOf). No new write operations. All tx data from existing audit trail. |
-| II. Zero-Friction UX | PASS | Portfolio shows balances in plain USD. No hex addresses visible to user. Pools labeled by protocol+chain+asset. |
-| III. Guardrailed Autonomy | N/A | No new agent actions. Portfolio is read-only display. |
-| IV. Transparency & Trust | PASS | This feature directly supports transparency — users can see exactly where their funds are and what the agent did. Per-pool tx history provides the "Why?" screen. |
-| V. Simplicity (YAGNI) | PASS | Minimal additions: 1 new API endpoint, 2 new UI components. No new DB tables. Uses existing AgentAction data. |
+| I. Security-First | PASS | No changes to fund flow or wallet access |
+| II. Zero-Friction UX | PASS | Polling gives real-time feedback without user action |
+| III. Guardrailed Autonomy | PASS | Agent still operates within policy constraints |
+| IV. Transparency & Trust | PASS | Processing marker + polling gives visibility into agent state |
+| V. Simplicity (YAGNI) | PASS | Polling over WebSocket/SSE; no new dependencies; reuses existing endpoint |
 
 ## Project Structure
 
-### Documentation (this feature)
+### Source Code
 
 ```text
-specs/001-risk-quiz-strategies/
-├── plan.md              # This file
-├── research.md          # Phase 0 output
-├── data-model.md        # Phase 1 output
-├── quickstart.md        # Phase 1 output
-├── contracts/           # Phase 1 output
-│   └── api-endpoints.md
-└── tasks.md             # Phase 2 output (via /speckit.tasks)
-```
-
-### Source Code (repository root)
-
-```text
-apps/api/src/
-├── modules/
-│   └── investment/
+apps/
+├── agent/
+│   ├── src/
+│   │   ├── server.ts              # MODIFY — respond 202, run async, callback
+│   │   └── index.ts               # NO CHANGE
+│   └── .env                       # ADD API_SERVICE_URL
+├── api/
+│   └── src/modules/investment/
 │       ├── application/
-│       │   └── get-portfolio.use-case.ts     # NEW — reads on-chain balances + computes portfolio
+│       │   └── execute-investment.use-case.ts   # MODIFY — 5s timeout, marker action, reportAgentResults()
 │       └── infrastructure/
-│           └── investment.controller.ts       # MODIFY — add GET /portfolio endpoint
-│
-apps/web/src/
-├── app/
-│   └── dashboard/
-│       └── page.tsx                           # MODIFY — add PortfolioSection
-├── components/
-│   └── dashboard/
-│       ├── PortfolioSection.tsx               # NEW — pool cards with balances
-│       └── PoolTransactions.tsx               # NEW — per-pool transaction history
-├── lib/
-│   └── api.ts                                 # MODIFY — add fetchPortfolio()
+│           └── investment.controller.ts         # MODIFY — add POST /:id/actions/report
+└── web/
+    └── src/
+        ├── app/dashboard/page.tsx               # MODIFY — add polling useEffect
+        └── components/dashboard/
+            └── AgentActions.tsx                  # MODIFY — accept isProcessing prop
 ```
 
-**Structure Decision**: Extends existing monorepo structure. New use case in API, new components in web. No new modules or entities needed.
+## Implementation Details
 
-## Architecture
+### 1. Agent Server — Async Execution (`apps/agent/src/server.ts`)
 
-### Data Flow
+**Current**: `const result = await executeInvestment(params); send(res, 200, result);` — blocks until agent completes.
 
+**New**: Respond 202 immediately, run in background, POST callback when done.
+
+For both `/execute` and `/rebalance` handlers:
+```typescript
+// Read body, respond immediately
+const params = (await readBody(req)) as ExecuteInvestmentParams;
+send(res, 202, { status: 'accepted', investmentId: params.investmentId });
+
+// Background execution + callback
+executeInvestment(params)
+  .then(async (result) => {
+    const apiUrl = process.env.API_SERVICE_URL ?? 'http://localhost:3001/api';
+    await fetch(`${apiUrl}/investments/${params.investmentId}/actions/report`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId: params.userId,
+        strategyId: params.strategy.id,
+        ...result,
+      }),
+    });
+    console.log(`[agent] callback sent for ${params.investmentId}`);
+  })
+  .catch((err) => {
+    console.error(`[agent] execution failed for ${params.investmentId}:`, err.message);
+    // Callback with failure
+    const apiUrl = process.env.API_SERVICE_URL ?? 'http://localhost:3001/api';
+    fetch(`${apiUrl}/investments/${params.investmentId}/actions/report`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId: params.userId,
+        strategyId: params.strategy.id,
+        actions: [{ actionType: 'rate_check', status: 'failed', rationale: `Agent failed: ${err.message}` }],
+        summary: `Execution failed: ${err.message}`,
+      }),
+    }).catch(() => {});
+  });
+return; // Already responded 202
 ```
-Dashboard → fetchPortfolio(userId)
-  → API: GET /api/investments/portfolio?userId=...
-    → GetPortfolioUseCase
-      1. Find active UserInvestment + Strategy
-      2. Find all AgentAction records (status=executed, actionType=supply/withdraw)
-      3. Read on-chain aToken balances via viem (Base Sepolia RPC)
-      4. Compute per-pool positions:
-         - pool: { chain, protocol, asset }
-         - onChainBalance: aToken balance in USD
-         - totalSupplied: sum of supply actions
-         - totalWithdrawn: sum of withdraw actions
-         - earnedYield: onChainBalance - (totalSupplied - totalWithdrawn)
-         - latestApy: from last agent rate_check or supply action
-         - actionCount: number of actions for this pool
-      5. Return PortfolioResponse
-  → Frontend renders PortfolioSection with pool cards
-    → Click pool card → expand PoolTransactions (filtered agent actions)
+
+For `/rebalance`, the callback body uses `strategyId: params.newStrategy.id`.
+
+**Env**: Add `API_SERVICE_URL=http://localhost:3001/api` to `apps/agent/.env` and `.env.example`.
+
+### 2. NestJS API — Execute Use Case (`apps/api/src/modules/investment/application/execute-investment.use-case.ts`)
+
+**Changes to `triggerAgent()` (lines 101-148)**:
+
+a) **Create processing marker** before sending HTTP request:
+```typescript
+const marker = AgentAction.create({
+  investmentId: params.investmentId,
+  userId: params.userId,
+  actionType: AgentActionType.RATE_CHECK,
+  strategyId: params.strategy.id,
+  chain: params.strategy.allowedChains[0] ?? 'base',
+  protocol: 'Aave v3',
+  asset: 'USDC',
+  amount: '0',
+  rationale: 'Agent is processing your investment...',
+});
+await this.agentActionRepo.save(marker);
 ```
 
-### On-Chain Balance Reading
+b) **Shorten HTTP timeout** — only confirm 202 receipt (5 seconds):
+```typescript
+const response = await fetch(`${agentServiceUrl}/execute`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(params),
+  signal: AbortSignal.timeout(5_000),
+});
+if (response.status !== 202) throw new Error(`Agent returned ${response.status}`);
+// Don't parse body — results arrive via callback
+```
+
+c) **Remove `saveAgentActions` from triggerAgent()** — moved to callback handler.
+
+d) **Same changes to `triggerRebalance()`** (lines 44-99).
+
+e) **New method `reportAgentResults()`**:
+```typescript
+async reportAgentResults(
+  investmentId: string,
+  userId: string,
+  strategyId: string,
+  actions: Array<{ actionType?: string; pool?: { chain: string; protocol: string; asset: string }; ... }>,
+): Promise<void> {
+  // Delete the processing marker
+  const existingActions = await this.agentActionRepo.findByInvestmentId(investmentId);
+  const marker = existingActions.find(
+    (a) => a.status === AgentActionStatus.PENDING && a.rationale.includes('Agent is processing'),
+  );
+  if (marker) await this.agentActionRepo.remove(marker);
+
+  // Save real actions
+  await this.saveAgentActions(investmentId, userId, strategyId, actions);
+}
+```
+
+### 3. NestJS Controller — Callback Endpoint (`apps/api/src/modules/investment/infrastructure/investment.controller.ts`)
+
+Add after the existing `POST /execute` handler:
+```typescript
+@Post(':investmentId/actions/report')
+@HttpCode(204)
+async reportActions(
+  @Param('investmentId') investmentId: string,
+  @Body() body: { userId: string; strategyId: string; actions: any[]; summary?: string },
+) {
+  await this.executeInvestmentUseCase.reportAgentResults(
+    investmentId, body.userId, body.strategyId, body.actions ?? [],
+  );
+}
+```
+
+### 4. Frontend — Dashboard Polling (`apps/web/src/app/dashboard/page.tsx`)
+
+Add a polling `useEffect` after the existing data-fetching effect:
 
 ```typescript
-// aToken addresses (Base Sepolia, Aave V3 Pool 0x07eA...)
-const ATOKEN_MAP: Record<string, `0x${string}`> = {
-  'USDC': '0xf53B60F4006cab2b3C4688ce41fD5362427A2A66',
-};
+// Poll agent actions every 3s while agent is processing
+useEffect(() => {
+  if (!investment) return;
+  const isProcessing = actions.length === 0 ||
+    (actions.length > 0 && actions.every((a) => a.status === 'pending'));
+  if (!isProcessing) return;
 
-// Read balance via standard ERC-20 balanceOf
-const balance = await publicClient.readContract({
-  address: atokenAddress,
-  abi: parseAbi(['function balanceOf(address) view returns (uint256)']),
-  functionName: 'balanceOf',
-  args: [smartAccountAddress],
-});
+  const startTime = Date.now();
+  const MAX_POLL_MS = 10 * 60 * 1000; // 10 minutes
+
+  const poll = setInterval(() => {
+    if (Date.now() - startTime > MAX_POLL_MS) {
+      clearInterval(poll);
+      return;
+    }
+    fetchAgentActions(investment.investmentId)
+      .then((res) => {
+        setActions(res.actions);
+        const done = res.actions.some((a) => a.status === 'executed' || a.status === 'failed');
+        if (done) clearInterval(poll);
+      })
+      .catch(() => {});
+  }, 3_000);
+
+  return () => clearInterval(poll);
+}, [investment, actions]);
 ```
 
-### Frontend Layout
+### 5. Frontend — Processing State (`apps/web/src/components/dashboard/AgentActions.tsx`)
 
+Add `isProcessing` prop and show spinner when processing:
+
+```typescript
+interface AgentActionsProps {
+  actions: AgentAction[];
+  isProcessing?: boolean;  // NEW
+}
+
+// In render, when actions are empty and isProcessing:
+if (actions.length === 0 && isProcessing) {
+  return (
+    <div className="...">
+      <h3>Agent activity</h3>
+      <div className="flex items-center gap-2 py-4">
+        <div className="animate-spin h-4 w-4 border-2 border-gray-400 border-t-transparent rounded-full" />
+        <p className="text-sm text-gray-500">Agent is processing your investment...</p>
+      </div>
+    </div>
+  );
+}
 ```
-Dashboard Page
-├── InvestmentSummary (existing — strategy name, allocations, APY range)
-├── PortfolioSection (NEW)
-│   ├── Total Portfolio Value card
-│   ├── Pool Card: "USDC on Aave V3 (Base Sepolia)"
-│   │   ├── Current Balance: $10.50
-│   │   ├── Supplied: $10.00 | Earned: $0.50
-│   │   ├── Current APY: 8.5%
-│   │   └── [expand] → PoolTransactions
-│   │       ├── Supply $10.00 — Feb 28, 2:30 PM — tx: 0x965...
-│   │       └── Rate Check — Feb 28, 3:00 PM — 8.5% APY
-│   └── Pool Card: (additional pools if multi-pool strategy)
-└── AgentActions (existing — full timeline, kept as-is)
+
+In `dashboard/page.tsx`, pass `isProcessing`:
+```typescript
+const isProcessing = actions.length > 0 && actions.every((a) => a.status === 'pending');
+// ...
+<AgentActions actions={actions} isProcessing={isProcessing} />
 ```
 
-## Complexity Tracking
+### 6. Environment Variables
 
-> No constitution violations. No complexity justifications needed.
+**`apps/agent/.env`** — add:
+```
+API_SERVICE_URL=http://localhost:3001/api
+```
+
+**`apps/agent/.env.example`** — add:
+```
+API_SERVICE_URL=http://localhost:3001/api
+```
+
+## Files Changed Summary
+
+| File | Change Type | Description |
+|------|------------|-------------|
+| `apps/agent/src/server.ts` | Modify | Respond 202, run async, POST callback |
+| `apps/agent/.env` | Modify | Add `API_SERVICE_URL` |
+| `apps/agent/.env.example` | Modify | Add `API_SERVICE_URL` |
+| `apps/api/src/modules/investment/application/execute-investment.use-case.ts` | Modify | 5s timeout, marker action, `reportAgentResults()` |
+| `apps/api/src/modules/investment/infrastructure/investment.controller.ts` | Modify | Add `POST /:id/actions/report` |
+| `apps/web/src/app/dashboard/page.tsx` | Modify | Add polling `useEffect`, pass `isProcessing` |
+| `apps/web/src/components/dashboard/AgentActions.tsx` | Modify | Accept `isProcessing` prop, show spinner |
+
+## Verification
+
+1. Start all services: Aave MCP (8080), agent (3002), API (3001), web (3000)
+2. Click "Start investing" on strategies page
+3. API returns immediately → redirects to dashboard
+4. Dashboard shows "Agent is processing..." with spinner
+5. After 3-10 min: agent completes → POSTs callback → dashboard auto-updates with executed actions
+6. Verify: `GET /investments/:id/actions` shows real actions (not just the processing marker)
+7. Edge case: stop agent server mid-execution → callback never arrives → marker stays pending → user sees "processing" state (can retry later via `POST /execute`)

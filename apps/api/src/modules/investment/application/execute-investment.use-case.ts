@@ -52,18 +52,16 @@ export class ExecuteInvestmentUseCase {
     const agentServiceUrl = process.env.AGENT_SERVICE_URL;
 
     if (agentServiceUrl) {
+      // Trigger agent service — agent responds 202 immediately, runs in background, POSTs callback when done
       try {
         const response = await fetch(`${agentServiceUrl}/rebalance`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(params),
-          signal: AbortSignal.timeout(120_000),
+          signal: AbortSignal.timeout(5_000),
         });
-        if (!response.ok) throw new Error(`Agent service returned ${response.status}`);
-        const result = (await response.json()) as { actions?: any[] };
-        if (result.actions) {
-          await this.saveAgentActions(params.investmentId, params.userId, params.newStrategy.id, result.actions);
-        }
+        if (response.status !== 202) throw new Error(`Agent service returned ${response.status}`);
+        // Don't parse body — results arrive via callback to POST /investments/:id/actions/report
       } catch (err) {
         this.logger.error(`Agent rebalance failed: ${(err as Error).message}`);
         await this.createFailedAction(params.investmentId, params.userId, params.newStrategy.id, (err as Error).message);
@@ -108,23 +106,19 @@ export class ExecuteInvestmentUseCase {
     const agentServiceUrl = process.env.AGENT_SERVICE_URL;
 
     if (agentServiceUrl) {
-      // Trigger agent service via HTTP (microservice approach)
+      // Trigger agent service via HTTP — agent responds 202 immediately, runs in background, POSTs callback when done
       try {
         const response = await fetch(`${agentServiceUrl}/execute`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(params),
-          signal: AbortSignal.timeout(120_000),
+          signal: AbortSignal.timeout(5_000),
         });
 
-        if (!response.ok) {
+        if (response.status !== 202) {
           throw new Error(`Agent service returned ${response.status}`);
         }
-
-        const result = (await response.json()) as { actions?: any[] };
-        if (result.actions) {
-          await this.saveAgentActions(params.investmentId, params.userId, params.strategy.id, result.actions);
-        }
+        // Don't parse body — results arrive via callback to POST /investments/:id/actions/report
       } catch (err) {
         this.logger.error(`Agent service call failed: ${(err as Error).message}`);
         await this.createFailedAction(params.investmentId, params.userId, params.strategy.id, (err as Error).message);
@@ -145,6 +139,24 @@ export class ExecuteInvestmentUseCase {
       });
       await this.agentActionRepo.save(action);
     }
+  }
+
+  async reportAgentResults(
+    investmentId: string,
+    userId: string,
+    strategyId: string,
+    actions: Array<{
+      actionType?: string;
+      pool?: { chain: string; protocol: string; asset: string };
+      amountUsd?: number;
+      expectedApy?: number;
+      gasCostUsd?: number;
+      status?: string;
+      txHash?: string;
+      rationale: string;
+    }>,
+  ): Promise<void> {
+    await this.saveAgentActions(investmentId, userId, strategyId, actions);
   }
 
   private async saveAgentActions(

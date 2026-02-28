@@ -58,6 +58,33 @@ export default function DashboardPage() {
     Promise.all([portfolioPromise, investmentPromise]).finally(() => setLoading(false));
   }, [loadPortfolio]);
 
+  // Poll agent actions every 3s while agent is processing
+  useEffect(() => {
+    if (!investment) return;
+    const isStillProcessing = actions.length === 0 ||
+      actions.every((a) => a.status === 'pending');
+    if (!isStillProcessing) return;
+
+    const startTime = Date.now();
+    const MAX_POLL_MS = 10 * 60 * 1000; // 10 minutes
+
+    const poll = setInterval(() => {
+      if (Date.now() - startTime > MAX_POLL_MS) {
+        clearInterval(poll);
+        return;
+      }
+      fetchAgentActions(investment.investmentId)
+        .then((res) => {
+          setActions(res.actions);
+          const done = res.actions.some((a) => a.status === 'executed' || a.status === 'failed');
+          if (done) clearInterval(poll);
+        })
+        .catch(() => {});
+    }, 3_000);
+
+    return () => clearInterval(poll);
+  }, [investment, actions]);
+
   const handleRetryPortfolio = useCallback(() => {
     loadPortfolio(getUserId());
   }, [loadPortfolio]);
@@ -142,7 +169,7 @@ export default function DashboardPage() {
       <WalletSummary {...walletSummaryProps} />
       <InvestmentSummary investment={investment} />
       {portfolio && <PortfolioSection pools={portfolio.pools} />}
-      <AgentActions actions={actions} />
+      <AgentActions actions={actions} isProcessing={actions.length === 0 || actions.every((a) => a.status === 'pending')} />
     </div>
   );
 }

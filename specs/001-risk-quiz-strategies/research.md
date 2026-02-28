@@ -300,3 +300,51 @@ earnedYield = onChainBalance - netInvested
 **Alternatives considered**:
 - Separate `/portfolio` route — fragments post-investment experience.
 - Replacing `AgentActions` — loses full chronological timeline.
+
+---
+
+## Phase 4 Research (Async Agent Execution)
+
+### R20: Real-time notification mechanism
+
+**Decision**: HTTP Polling (3-second interval)
+
+**Rationale**:
+- Agent execution takes 3–10 minutes. A 3-second polling interval means max 3s delay after completion — negligible for a minutes-long operation.
+- Zero new dependencies. Reuses existing `GET /investments/:id/actions` endpoint.
+- Polling is inherently resilient to disconnections — no reconnection logic needed.
+- The real architectural improvement is making the agent fire-and-forget; the notification mechanism is secondary.
+
+**Alternatives considered**:
+- **SSE (Server-Sent Events)**: NestJS supports `@Sse()` natively. But the server would still poll the DB internally, just moving polling from client to server. Adds connection management complexity (open connections per user). Better for future progress streaming but overkill now.
+- **WebSocket (`@nestjs/websockets` + `socket.io`)**: Bidirectional communication not needed (frontend only listens). Requires two new npm packages. Most complex option. Would be justified if we needed streaming progress events during agent execution (e.g., "Checking rates...", "Executing supply...") but that requires agent-level changes too.
+
+### R21: Agent completion reporting
+
+**Decision**: Agent server POSTs results back to NestJS API via callback endpoint
+
+**Rationale**:
+- Agent server is a separate process with no direct DB access.
+- Callback (`POST /investments/:id/actions/report`) is the cleanest inter-service communication.
+- API already has `saveAgentActions()` — callback handler reuses it.
+- Agent responds 202 immediately → runs in background → POSTs back when done.
+
+**Alternatives considered**:
+- Direct DB from agent: Requires PostgreSQL + MikroORM in agent. Tight coupling.
+- Message queue (Redis/RabbitMQ): Over-engineered for single producer-consumer.
+- Longer HTTP timeout (10 min): "Works" but wastes server resources holding open connections.
+
+### R22: Processing status indicator
+
+**Decision**: Create a `rate_check | pending` action immediately when agent is triggered, before async execution begins
+
+**Rationale**:
+- Existing `AgentAction` entity already supports `PENDING` status.
+- No schema migration needed — reuses existing table.
+- Frontend can distinguish: `pending` = processing, `executed`/`failed` = done.
+- Existing `createFailedAction()` already uses this pattern for error tombstones.
+
+**Alternatives considered**:
+- New `AgentExecution` entity with job tracking: Cleaner model but requires migration, repository, endpoints. Over-engineered.
+- `UserInvestment.agentStatus` field: Requires migration. Couples investment entity to agent lifecycle.
+- In-memory state: Lost on restart. Not durable.

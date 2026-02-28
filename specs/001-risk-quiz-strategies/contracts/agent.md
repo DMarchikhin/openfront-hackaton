@@ -176,3 +176,96 @@ Returns the agent's action log for a given investment.
 | `create-policy` | Set up gas sponsorship policy |
 | `create-policy-rule` | Allowlist Aave contract functions |
 | `simulate-transaction` | Pre-validate transactions |
+
+---
+
+## Phase 4: Async Agent Execution
+
+### Agent Server — Async Pattern
+
+The agent server (`apps/agent/src/server.ts`) MUST respond immediately
+and run the agent in the background. When complete, it POSTs results
+back to the API via a callback endpoint.
+
+**Flow** (replaces synchronous await):
+
+```
+Client (API) → POST /execute → Agent Server
+                                 ↓ respond 202 immediately
+                                 ↓ run executeInvestment() in background
+                                 ↓ ... 3-10 minutes ...
+                                 ↓ POST ${API_SERVICE_URL}/investments/${id}/actions/report
+                                       → API saves actions to DB
+```
+
+**Request**: Same as current `POST /execute` (unchanged).
+
+**Response** `202 Accepted` (returned immediately, before agent starts):
+```json
+{
+  "status": "accepted",
+  "investmentId": "uuid"
+}
+```
+
+**Callback** `POST ${API_SERVICE_URL}/investments/:id/actions/report`:
+```json
+{
+  "userId": "user-123",
+  "strategyId": "uuid",
+  "actions": [
+    {
+      "actionType": "supply",
+      "pool": { "chain": "base", "protocol": "Aave v3", "asset": "USDC" },
+      "amountUsd": 10.00,
+      "expectedApy": 8.5,
+      "gasCostUsd": 0.02,
+      "status": "executed",
+      "txHash": "0x...",
+      "rationale": "Supplied 10 USDC..."
+    }
+  ],
+  "totalAllocated": 10.00,
+  "averageApy": 8.5,
+  "summary": "Successfully deployed..."
+}
+```
+
+Same pattern for `POST /rebalance`.
+
+### API — Callback Endpoint
+
+**`POST /investments/:investmentId/actions/report`** (new)
+
+Called by the agent server when execution completes (or fails).
+
+**Request**: Agent result JSON (see callback above).
+
+**Response** `204 No Content` (success, no body).
+
+**Errors**:
+- `404` — Investment not found
+
+### API — Processing Marker
+
+When the API triggers the agent and receives `202`, it MUST immediately
+create a `rate_check | pending` action in the DB as a processing marker:
+
+```json
+{
+  "actionType": "rate_check",
+  "status": "pending",
+  "amount": "0",
+  "rationale": "Agent is processing your investment..."
+}
+```
+
+Frontend uses this to distinguish: `pending` = processing, `executed`/`failed` = done.
+
+### Frontend — Polling
+
+Dashboard polls `GET /investments/:id/actions` every 3 seconds while
+the most recent action has `status: "pending"`. Stops polling when:
+- An action with `status: "executed"` appears, OR
+- An action with `status: "failed"` appears, OR
+- 10 minutes elapse (timeout safety)

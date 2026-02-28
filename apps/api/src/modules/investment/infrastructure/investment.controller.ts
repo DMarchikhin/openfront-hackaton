@@ -125,6 +125,17 @@ export class InvestmentController {
     return this.executeInvestmentUseCase.execute(body.investmentId, parseFloat(body.userAmount));
   }
 
+  @Post(':investmentId/actions/report')
+  @HttpCode(204)
+  async reportActions(
+    @Param('investmentId') investmentId: string,
+    @Body() body: { userId: string; strategyId: string; actions: any[]; summary?: string },
+  ) {
+    await this.executeInvestmentUseCase.reportAgentResults(
+      investmentId, body.userId, body.strategyId, body.actions ?? [],
+    );
+  }
+
   @Get(':investmentId/actions')
   async getActions(@Param('investmentId') investmentId: string) {
     const actions = await this.agentActionRepo.findByInvestmentId(investmentId);

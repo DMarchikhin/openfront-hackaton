@@ -2,6 +2,7 @@ import { AgentAction } from '@/lib/api';
 
 interface AgentActionsProps {
   actions: AgentAction[];
+  isProcessing?: boolean;
 }
 
 const ACTION_ICON: Record<string, string> = {
@@ -18,7 +19,21 @@ const STATUS_CONFIG: Record<string, { badge: string; label: string }> = {
   failed: { badge: 'bg-red-100 text-red-700', label: 'Failed' },
 };
 
-export function AgentActions({ actions }: AgentActionsProps) {
+export function AgentActions({ actions, isProcessing = false }: AgentActionsProps) {
+  if (actions.length === 0 && isProcessing) {
+    return (
+      <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
+        <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
+          Agent activity
+        </h3>
+        <div className="flex items-center gap-2 py-4 justify-center">
+          <div className="animate-spin h-4 w-4 border-2 border-gray-400 border-t-transparent rounded-full" />
+          <p className="text-sm text-gray-500">Agent is processing your investment...</p>
+        </div>
+      </div>
+    );
+  }
+
   if (actions.length === 0) {
     return (
       <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">

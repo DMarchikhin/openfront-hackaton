@@ -573,6 +573,30 @@ Task T064: "Frontend API client for agent"
 
 ---
 
+## Phase 18: Async Agent Execution + Frontend Polling (US3/US4)
+
+**Purpose**: Agent takes 3–10 minutes. Current 120s HTTP timeout kills the connection. Fix: agent responds 202 immediately, runs in background, POSTs results back to API via callback. Frontend polls every 3s.
+
+**Depends on**: Phase 1-17 complete
+
+- [x] T088 [P] Add `API_SERVICE_URL=http://localhost:3001/api` to `apps/agent/.env` and `apps/agent/.env.example`
+
+- [x] T089 Modify agent server async execution in `apps/agent/src/server.ts` — for both `/execute` and `/rebalance`: read body → respond `202 { status: 'accepted', investmentId }` immediately → run `executeInvestment`/`rebalanceInvestment` in background (no await) → on success, POST result to `${API_SERVICE_URL}/investments/${investmentId}/actions/report` with `{ userId, strategyId, ...result }` → on failure, POST error callback with `{ userId, strategyId, actions: [{ actionType: 'rate_check', status: 'failed', rationale }], summary }`. For `/rebalance`, use `strategyId: params.newStrategy.id`.
+
+- [x] T090 Modify `triggerAgent()` and `triggerRebalance()` in `apps/api/src/modules/investment/application/execute-investment.use-case.ts` — change `AbortSignal.timeout` from 120_000 to 5_000 (just confirm 202 receipt), check `response.status !== 202` instead of `!response.ok`, remove `await response.json()` and `saveAgentActions` calls from both methods (results now arrive via callback). Remove the catch-block `createFailedAction` calls too — errors will come via callback.
+
+- [x] T091 Add `reportAgentResults()` method to `ExecuteInvestmentUseCase` in `apps/api/src/modules/investment/application/execute-investment.use-case.ts` — accepts `investmentId, userId, strategyId, actions[]`, calls existing `saveAgentActions()` to persist results. This is the callback handler logic.
+
+- [x] T092 Add callback endpoint `POST :investmentId/actions/report` to `apps/api/src/modules/investment/infrastructure/investment.controller.ts` — `@Post(':investmentId/actions/report') @HttpCode(204)` that accepts `{ userId, strategyId, actions[], summary? }` body and calls `executeInvestmentUseCase.reportAgentResults()`.
+
+- [x] T093 Add polling `useEffect` to `apps/web/src/app/dashboard/page.tsx` — poll `fetchAgentActions(investmentId)` every 3s while `actions.length === 0 || actions.every(a => a.status === 'pending')`. Stop when any action has `status === 'executed'` or `status === 'failed'`, or after 10 minutes. Pass `isProcessing` prop to `AgentActions`.
+
+- [x] T094 Add `isProcessing` prop to `AgentActions` in `apps/web/src/components/dashboard/AgentActions.tsx` — when `actions.length === 0 && isProcessing`, show spinner with "Agent is processing your investment..." message instead of "No agent actions yet."
+
+**Checkpoint**: Agent execution no longer times out. Dashboard shows processing state and auto-updates when agent completes.
+
+---
+
 ## Dependencies & Execution Order (Phase 3)
 
 ### Phase Dependencies

@@ -35,27 +35,77 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (method === 'POST' && url === '/execute') {
-    try {
-      const params = (await readBody(req)) as ExecuteInvestmentParams;
-      console.log(`[agent] execute investment=${params.investmentId} amount=${params.userAmount}`);
-      const result = await executeInvestment(params);
-      return send(res, 200, result);
-    } catch (err) {
-      console.error('[agent] /execute error:', (err as Error).message);
-      return send(res, 500, { error: (err as Error).message });
-    }
+    const params = (await readBody(req)) as ExecuteInvestmentParams;
+    console.log(`[agent] execute investment=${params.investmentId} amount=${params.userAmount}`);
+    send(res, 202, { status: 'accepted', investmentId: params.investmentId });
+
+    // Background execution + callback
+    executeInvestment(params)
+      .then(async (result) => {
+        const apiUrl = process.env.API_SERVICE_URL ?? 'http://localhost:3001/api';
+        await fetch(`${apiUrl}/investments/${params.investmentId}/actions/report`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: params.userId,
+            strategyId: params.strategy.id,
+            ...result,
+          }),
+        });
+        console.log(`[agent] callback sent for ${params.investmentId}`);
+      })
+      .catch((err) => {
+        console.error(`[agent] execution failed for ${params.investmentId}:`, (err as Error).message);
+        const apiUrl = process.env.API_SERVICE_URL ?? 'http://localhost:3001/api';
+        fetch(`${apiUrl}/investments/${params.investmentId}/actions/report`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: params.userId,
+            strategyId: params.strategy.id,
+            actions: [{ actionType: 'rate_check', status: 'failed', rationale: `Agent failed: ${(err as Error).message}` }],
+            summary: `Execution failed: ${(err as Error).message}`,
+          }),
+        }).catch(() => {});
+      });
+    return;
   }
 
   if (method === 'POST' && url === '/rebalance') {
-    try {
-      const params = (await readBody(req)) as RebalanceParams;
-      console.log(`[agent] rebalance investment=${params.investmentId} ${params.previousStrategy.name} → ${params.newStrategy.name}`);
-      const result = await rebalanceInvestment(params);
-      return send(res, 200, result);
-    } catch (err) {
-      console.error('[agent] /rebalance error:', (err as Error).message);
-      return send(res, 500, { error: (err as Error).message });
-    }
+    const params = (await readBody(req)) as RebalanceParams;
+    console.log(`[agent] rebalance investment=${params.investmentId} ${params.previousStrategy.name} → ${params.newStrategy.name}`);
+    send(res, 202, { status: 'accepted', investmentId: params.investmentId });
+
+    // Background execution + callback
+    rebalanceInvestment(params)
+      .then(async (result) => {
+        const apiUrl = process.env.API_SERVICE_URL ?? 'http://localhost:3001/api';
+        await fetch(`${apiUrl}/investments/${params.investmentId}/actions/report`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: params.userId,
+            strategyId: params.newStrategy.id,
+            ...result,
+          }),
+        });
+        console.log(`[agent] rebalance callback sent for ${params.investmentId}`);
+      })
+      .catch((err) => {
+        console.error(`[agent] rebalance failed for ${params.investmentId}:`, (err as Error).message);
+        const apiUrl = process.env.API_SERVICE_URL ?? 'http://localhost:3001/api';
+        fetch(`${apiUrl}/investments/${params.investmentId}/actions/report`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: params.userId,
+            strategyId: params.newStrategy.id,
+            actions: [{ actionType: 'rate_check', status: 'failed', rationale: `Rebalance failed: ${(err as Error).message}` }],
+            summary: `Rebalance failed: ${(err as Error).message}`,
+          }),
+        }).catch(() => {});
+      });
+    return;
   }
 
   return send(res, 404, { error: 'Not found' });
