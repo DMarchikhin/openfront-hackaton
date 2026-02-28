@@ -251,9 +251,8 @@ const server = http.createServer(async (req, res) => {
           } else if (msg.type === 'assistant') {
             const content = (msg as unknown as { message: { content: Array<{ type: string; text?: string; thinking?: string }> } }).message?.content ?? [];
             for (const block of content) {
-              if (block.type === 'text' && block.text) {
-                broadcastEvent(investmentId, 'thinking', { text: block.text });
-              } else if (block.type === 'thinking' && block.thinking) {
+              // text blocks are already streamed via stream_event → 'text' above; skip them
+              if (block.type === 'thinking' && block.thinking) {
                 broadcastEvent(investmentId, 'thinking', { text: block.thinking });
               }
             }
@@ -267,11 +266,6 @@ const server = http.createServer(async (req, res) => {
           } else if (msg.type === 'tool_use_summary') {
             const m = msg as unknown as { tool_name?: string; summary?: string };
             broadcastEvent(investmentId, 'tool_result', { tool: m.tool_name ?? 'tool', summary: m.summary ?? '' });
-          } else if (msg.type === 'result') {
-            const m = msg as unknown as { subtype: string; result?: string; error?: string };
-            if (m.subtype === 'success') {
-              broadcastEvent(investmentId, 'result', { text: m.result ?? '' });
-            }
           }
         }
       } catch (err) {
