@@ -32,13 +32,9 @@ coverage/
 npm-debug.log*
 pnpm-debug.log*
 
-# MikroORM
-temp/
+# Docker DB data volume contents
+docker/db/data/
 
 # Misc
 *.tgz
-
-# Docker DB data – ignore contents, folder is kept via docker/db/data/.gitignore
-docker/db/data/*
-!docker/db/data/.gitignore
 

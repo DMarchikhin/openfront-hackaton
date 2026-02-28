@@ -1,0 +1,5 @@
+# Ignore everything inside this folder (PostgreSQL data files)
+*
+# Except this file itself, so the empty folder is tracked by git
+!.gitignore
+
