@@ -147,6 +147,62 @@ InvestmentStrategy (1) ──contains──> (*) PoolAllocation [embedded]
 UserInvestment (*) ──references──> (1) InvestmentStrategy [via strategyId]
 ```
 
+---
+
+### AgentAction
+
+Represents a single action taken by the investment agent. Provides
+an audit trail of all autonomous decisions (constitution principle I
+and IV).
+
+| Field         | Type                          | Constraints          |
+|---------------|-------------------------------|----------------------|
+| id            | UUID                          | PK, auto-generated   |
+| investmentId  | UUID                          | FK → UserInvestment  |
+| userId        | string                        | Required             |
+| actionType    | enum(supply, withdraw, rebalance, rate_check) | Required |
+| strategyId    | UUID                          | FK → InvestmentStrategy |
+| chain         | string                        | Required             |
+| protocol      | string                        | Required             |
+| asset         | string                        | Required             |
+| amount        | string                        | Required (wei string)|
+| gasCostUsd    | number | null                 | Estimated gas in USD |
+| expectedApyBefore | number | null             | APY before action    |
+| expectedApyAfter  | number | null             | APY after action     |
+| rationale     | string                        | Required, max 1000   |
+| status        | enum(pending, executed, failed, skipped) | Required |
+| txHash        | string | null                 | On-chain tx hash     |
+| executedAt    | Date                          | Auto-set             |
+
+**Domain Logic**:
+- `create(...)`: Static factory. Records all decision context at
+  creation time.
+- `markExecuted(txHash)`: Sets status to executed, records tx hash.
+- `markFailed(reason)`: Sets status to failed, appends reason to
+  rationale.
+- `markSkipped(reason)`: Sets status to skipped (e.g., gas too high).
+
+**Invariant**: Every agent action MUST have a non-empty rationale
+explaining why the action was taken or skipped.
+
+---
+
+## Relationships (updated)
+
+```
+QuizQuestion (1) ──contains──> (*) QuizOption [embedded]
+
+RiskAssessment (1) ──contains──> (*) QuizAnswer [embedded]
+RiskAssessment (*) ──references──> (1) QuizQuestion [via questionId in answers]
+
+InvestmentStrategy (1) ──contains──> (*) PoolAllocation [embedded]
+
+UserInvestment (*) ──references──> (1) InvestmentStrategy [via strategyId]
+
+AgentAction (*) ──references──> (1) UserInvestment [via investmentId]
+AgentAction (*) ──references──> (1) InvestmentStrategy [via strategyId]
+```
+
 ## Seed Data
 
 Three pre-defined strategies MUST be seeded on first run:

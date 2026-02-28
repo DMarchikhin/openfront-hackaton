@@ -1,46 +1,42 @@
-# Implementation Plan: Risk Quiz & Investment Strategies
+# Implementation Plan: Investment Agent (Phase 2)
 
-**Branch**: `001-risk-quiz-strategies` | **Date**: 2026-02-28 | **Spec**: [spec.md](./spec.md)
-**Input**: Feature specification from `/specs/001-risk-quiz-strategies/spec.md`
+**Branch**: `001-risk-quiz-strategies` | **Date**: 2026-02-28 | **Spec**: `specs/001-risk-quiz-strategies/spec.md`
+**Input**: Agent extension — Claude Agent SDK + Openfort MCP + Aave MCP
 
 ## Summary
 
-Build a monorepo web application with a risk assessment quiz that
-assigns users a risk profile (Conservative, Balanced, Growth), shows
-matching investment strategies with Aave pool allocations, and lets
-users select a strategy to start autonomous AI-agent investing.
-Frontend in Next.js + Tailwind, backend in NestJS with hexagonal
-architecture, MikroORM + PostgreSQL.
+Build an autonomous investment agent (`apps/agent`) that uses Claude's
+Agent SDK with MCP tools to execute investment decisions. When a user
+selects a strategy, the agent reads the strategy parameters (pool
+allocations, allowed chains, rebalance threshold), fetches live Aave
+pool rates via MCP, evaluates gas costs, and executes optimal supply
+operations through Openfort's policy-enforced backend wallet. The agent
+reasons about the best allocation considering the user's amount and
+network fees to maximize return on investment.
 
 ## Technical Context
 
 **Language/Version**: TypeScript 5.x (Node.js 20+)
-**Primary Dependencies**: Next.js 15 (App Router), NestJS 10,
-MikroORM 6, Tailwind CSS 4, pnpm workspaces
-**Storage**: PostgreSQL 15+ via MikroORM
-**Testing**: Jest — domain layer unit tests only
-**Target Platform**: Web (localhost for hackathon demo)
-**Project Type**: Web application (monorepo: frontend + backend)
-**Performance Goals**: Strategy screen loads in < 2s, quiz completes
-in < 60s (user time)
-**Constraints**: Hackathon scope (1 day), testnet only (Base Sepolia),
-USDC only
-**Scale/Scope**: Demo scale (~5 screens, 6 API endpoints, 4 domain
-entities)
+**Primary Dependencies**: `@anthropic-ai/claude-agent-sdk`, `@openfort/openfort-node`, Tairon-ai/aave-mcp, Zod
+**Storage**: PostgreSQL (existing, via NestJS API) — agent reads strategy data from API
+**Testing**: Jest — domain unit tests for allocation logic
+**Target Platform**: Node.js server (runs alongside API)
+**Project Type**: Agent service (standalone app in monorepo)
+**Performance Goals**: Agent decision + execution within 30 seconds
+**Constraints**: Base Sepolia testnet only, USDC only, Openfort policy-enforced transactions
+**Scale/Scope**: Single-user demo, single-chain, 3 strategies
 
 ## Constitution Check
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-| Principle | Status | Evidence |
-|-----------|--------|----------|
-| I. Security-First | PASS | Strategy pool allocations reference whitelisted Aave contracts only. No private keys exposed to frontend. Agent executes via Openfort policy-enforced backend wallet (FR-009). |
-| II. Zero-Friction UX | PASS | Quiz uses plain language (FR-010). No gas prompts, no chain selection, no DeFi jargon in UI. Strategy selection is 1-tap. |
-| III. Guardrailed Autonomy | PASS | Agent configured with strategy parameters (target pools, chains, rebalance threshold) per FR-005. Agent cannot operate outside strategy constraints. |
-| IV. Transparency & Trust | PASS | Dashboard shows active strategy, current APY, earnings (FR-006). Strategy cards show full pool allocation breakdown. |
-| V. Simplicity (YAGNI) | PASS | No fiat ramp, no mobile app, no real risk scoring, no KYC. Testnet only. Three pre-defined strategies. Simple additive quiz scoring. |
-
-No violations. No complexity tracking entries needed.
+| Principle | Status | Notes |
+|-----------|--------|-------|
+| I. Security-First | PASS | Transactions via Openfort policy-enforced wallet. Agent cannot send to arbitrary addresses. Full audit trail logged. |
+| II. Zero-Friction UX | PASS | Agent runs server-side, user only sees dashboard results. No gas prompts or chain selection. |
+| III. Guardrailed Autonomy | PASS | Agent executes only through Openfort policies. Cost-benefit check before rebalance. Respects strategy constraints (allowed pools, chains, allocation %). |
+| IV. Transparency & Trust | PASS | Agent logs every decision with rationale. Results visible on dashboard. |
+| V. Simplicity (YAGNI) | PASS | Single chain (Base), single asset (USDC), no real cross-chain ops. Uses existing MCP servers rather than building custom protocol integrations. |
 
 ## Project Structure
 
@@ -48,170 +44,55 @@ No violations. No complexity tracking entries needed.
 
 ```text
 specs/001-risk-quiz-strategies/
-├── plan.md
-├── research.md
-├── data-model.md
-├── quickstart.md
+├── plan.md              # This file (updated for Phase 2)
+├── research.md          # Updated with R11-R15 (agent research)
+├── data-model.md        # Updated with AgentAction entity
+├── quickstart.md        # Updated with agent setup steps
 ├── contracts/
-│   └── api.md
-└── checklists/
-    └── requirements.md
+│   ├── api.md           # Existing API contracts
+│   └── agent.md         # Agent service contracts (new)
+└── tasks.md             # To be generated by /speckit.tasks
 ```
 
 ### Source Code (repository root)
 
 ```text
-pnpm-workspace.yaml
-package.json                          # Root: dev scripts, concurrently
-
 apps/
-├── web/                              # Next.js 15 + Tailwind CSS
-│   ├── src/
-│   │   ├── app/
-│   │   │   ├── layout.tsx
-│   │   │   ├── page.tsx              # Home → quiz CTA
-│   │   │   ├── quiz/
-│   │   │   │   └── page.tsx          # Quiz flow (stepper)
-│   │   │   ├── strategies/
-│   │   │   │   └── page.tsx          # Strategy cards + selection
-│   │   │   └── dashboard/
-│   │   │       └── page.tsx          # Active investment dashboard
-│   │   ├── components/
-│   │   │   ├── quiz/
-│   │   │   │   ├── QuizStepper.tsx
-│   │   │   │   ├── QuestionCard.tsx
-│   │   │   │   ├── ProgressBar.tsx
-│   │   │   │   └── RiskResult.tsx
-│   │   │   ├── strategy/
-│   │   │   │   ├── StrategyCard.tsx
-│   │   │   │   └── StrategyDetail.tsx
-│   │   │   ├── dashboard/
-│   │   │   │   └── InvestmentSummary.tsx
-│   │   │   └── ui/
-│   │   │       ├── Button.tsx
-│   │   │       └── Card.tsx
-│   │   └── lib/
-│   │       └── api.ts                # Fetch wrapper for backend
-│   ├── tailwind.config.ts
-│   ├── next.config.ts
-│   └── package.json
-│
-└── api/                              # NestJS 10 (hexagonal)
-    ├── src/
-    │   ├── modules/
-    │   │   ├── quiz/
-    │   │   │   ├── domain/
-    │   │   │   │   ├── quiz-question.entity.ts
-    │   │   │   │   ├── risk-assessment.entity.ts
-    │   │   │   │   └── ports/
-    │   │   │   │       ├── quiz-question.repository.port.ts
-    │   │   │   │       └── risk-assessment.repository.port.ts
-    │   │   │   ├── application/
-    │   │   │   │   ├── get-quiz-questions.use-case.ts
-    │   │   │   │   └── submit-quiz.use-case.ts
-    │   │   │   ├── infrastructure/
-    │   │   │   │   ├── quiz-question.repository.ts
-    │   │   │   │   ├── risk-assessment.repository.ts
-    │   │   │   │   └── quiz.controller.ts
-    │   │   │   └── quiz.module.ts
-    │   │   │
-    │   │   ├── strategy/
-    │   │   │   ├── domain/
-    │   │   │   │   ├── investment-strategy.entity.ts
-    │   │   │   │   └── ports/
-    │   │   │   │       └── strategy.repository.port.ts
-    │   │   │   ├── application/
-    │   │   │   │   └── get-strategies.use-case.ts
-    │   │   │   ├── infrastructure/
-    │   │   │   │   ├── strategy.repository.ts
-    │   │   │   │   └── strategy.controller.ts
-    │   │   │   └── strategy.module.ts
-    │   │   │
-    │   │   └── investment/
-    │   │       ├── domain/
-    │   │       │   ├── user-investment.entity.ts
-    │   │       │   └── ports/
-    │   │       │       └── investment.repository.port.ts
-    │   │       ├── application/
-    │   │       │   ├── start-investing.use-case.ts
-    │   │       │   └── switch-strategy.use-case.ts
-    │   │       ├── infrastructure/
-    │   │       │   ├── investment.repository.ts
-    │   │       │   └── investment.controller.ts
-    │   │       └── investment.module.ts
-    │   │
-    │   ├── database/
-    │   │   ├── migrations/
-    │   │   └── seeders/
-    │   │       └── initial-seed.ts   # Quiz questions + strategies
-    │   ├── app.module.ts
-    │   └── main.ts
-    ├── test/
-    │   └── unit/
-    │       ├── quiz/
-    │       │   ├── risk-assessment.entity.spec.ts
-    │       │   └── quiz-question.entity.spec.ts
-    │       ├── strategy/
-    │       │   └── investment-strategy.entity.spec.ts
-    │       └── investment/
-    │           └── user-investment.entity.spec.ts
-    ├── mikro-orm.config.ts
-    └── package.json
+├── api/                        # Existing NestJS backend
+│   └── src/modules/
+│       ├── quiz/               # Risk assessment (existing)
+│       ├── strategy/           # Strategies (existing)
+│       └── investment/         # Investments (existing)
+│           └── infrastructure/
+│               └── investment.controller.ts  # Add POST /investments/execute endpoint
+├── web/                        # Existing Next.js frontend
+│   └── src/
+│       ├── app/dashboard/      # Update to show agent actions
+│       └── components/dashboard/
+│           └── AgentActions.tsx # New component for agent action log
+└── agent/                      # NEW: Investment agent
+    ├── package.json
+    ├── tsconfig.json
+    ├── .env.example
+    └── src/
+        ├── index.ts            # Entry point — runs agent via query()
+        ├── agent-prompt.ts     # System prompt with investment rules
+        ├── mcp/
+        │   └── openfort-tools.ts  # Custom in-process MCP tools wrapping Openfort SDK
+        ├── domain/
+        │   └── allocation-optimizer.ts  # Pure logic: given rates + gas, compute optimal allocation
+        └── test/
+            └── allocation-optimizer.spec.ts  # Unit tests for optimizer
 ```
 
-**Structure Decision**: Web application monorepo with `apps/web` +
-`apps/api`. Hexagonal architecture applied per NestJS module with
-domain/application/infrastructure layers. Domain entities carry
-MikroORM decorators directly (pragmatic approach — see research.md R5).
-Ports defined as interfaces in domain layer for outbound adapters
-(repositories) only.
-
-## Architecture Notes
-
-### Hexagonal Architecture per Module
-
-Each backend module follows this dependency flow:
-
-```
-Controller (infrastructure) → Use Case (application) → Domain Entity
-                                        ↓
-                              Repository Port (domain/ports)
-                                        ↓
-                              MikroORM Repo (infrastructure)
-```
-
-- **Domain layer**: Entities with business logic + port interfaces.
-  No framework imports except MikroORM decorators (pragmatic).
-- **Application layer**: Use cases that orchestrate domain logic.
-  Depend on port interfaces, not concrete repositories.
-- **Infrastructure layer**: Controllers (inbound adapters) and
-  MikroORM repositories (outbound adapters).
-
-### SOLID Application
-
-- **S** — Each use case does one thing (GetQuizQuestions, SubmitQuiz, etc.)
-- **O** — New strategies added via seed data, no code changes needed
-- **L** — Not applicable (no inheritance hierarchies)
-- **I** — Repository ports define minimal interfaces per entity
-- **D** — Use cases depend on port interfaces, injected via NestJS DI
-
-### Tell Don't Ask
-
-Domain entities encapsulate behavior:
-- `riskAssessment.addAnswer(questionId, score)` — don't read score, calculate externally
-- `riskAssessment.complete(totalQuestions)` — don't check completion externally
-- `userInvestment.activate(strategyId)` — don't check status externally
-- `investmentStrategy.validateAllocations()` — don't sum percentages externally
-
-### Testing Strategy
-
-Unit tests for domain entities ONLY:
-- `risk-assessment.entity.spec.ts` — test addAnswer, complete, scoring logic
-- `investment-strategy.entity.spec.ts` — test validateAllocations, matchesRiskLevel
-- `user-investment.entity.spec.ts` — test activate, switchStrategy, deactivate
-
-No tests for controllers, use cases, or repositories.
+**Structure Decision**: Add `apps/agent` as a third workspace app.
+The agent is a standalone TypeScript process that connects to MCP
+servers (Aave MCP via SSE, custom Openfort tools in-process) and
+calls the NestJS API for strategy data. This keeps the agent
+decoupled from the API while sharing the monorepo workspace.
 
 ## Complexity Tracking
 
-No violations detected. No entries needed.
+| Violation | Why Needed | Simpler Alternative Rejected Because |
+|-----------|------------|-------------------------------------|
+| 3rd workspace app (`apps/agent`) | Agent needs autonomous runtime with MCP server connections — cannot run inside NestJS request lifecycle | Embedding agent in API creates tight coupling and blocks request threads during long-running agent operations |

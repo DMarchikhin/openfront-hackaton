@@ -266,3 +266,204 @@ With 2 developers after Phase 2:
 - All API responses must match contracts/api.md shapes exactly
 - Frontend must use plain language only — no DeFi jargon (constitution principle II)
 - Commit after each completed task or logical group
+
+---
+---
+
+# Phase 2: Investment Agent (Claude Agent SDK + MCP)
+
+**Input**: Phase 2 design documents from `/specs/001-risk-quiz-strategies/` (plan.md, research.md R11-R15, contracts/agent.md, data-model.md AgentAction entity)
+**Prerequisites**: All Phase 1 tasks (T001-T048) completed ✅
+
+**Tests**: Domain unit tests for allocation optimizer (user requested "unit test for domain not app layer").
+
+**Organization**: Tasks grouped into agent-specific user stories. US5 = Agent executes investment, US6 = Agent switches strategy, US7 = Dashboard shows agent actions.
+
+## Path Conventions (Phase 2)
+
+- **Agent app**: `apps/agent/src/`
+- **Backend (existing)**: `apps/api/src/`
+- **Frontend (existing)**: `apps/web/src/`
+- **Agent tests**: `apps/agent/src/test/`
+
+---
+
+## Phase 8: Agent Setup
+
+**Purpose**: Scaffold `apps/agent` workspace app with Claude Agent SDK, Openfort SDK, TypeScript config, and environment setup.
+
+- [ ] T049 Create apps/agent/ directory with package.json (name: "agent", dependencies: @anthropic-ai/claude-agent-sdk, @openfort/openfort-node, zod, dotenv; devDependencies: typescript, ts-node, @types/node, jest, ts-jest, @types/jest), tsconfig.json (extends root, target ES2022, module NodeNext, moduleResolution NodeNext, outDir dist, rootDir src, strict true, esModuleInterop true, resolveJsonModule true), and Jest config in package.json (transform ts-jest, testRegex .spec.ts$, testEnvironment node)
+- [ ] T050 [P] Create apps/agent/.env.example with ANTHROPIC_API_KEY, OPENFORT_API_KEY, OPENFORT_PROJECT_ID, AAVE_MCP_URL=http://localhost:8080/mcp/sse, API_BASE_URL=http://localhost:3001/api, CHAIN_ID=84532, NODE_ENV=development
+- [ ] T051 [P] Add agent scripts to root package.json: "dev:agent": "pnpm --filter agent start", "dev:all": "concurrently \"pnpm --filter api dev\" \"pnpm --filter web dev\" \"pnpm --filter agent start\"". Add "start": "ts-node src/index.ts" and "test": "jest" scripts to apps/agent/package.json
+- [ ] T052 Run pnpm install from root to resolve new workspace dependencies
+
+**Checkpoint**: `apps/agent` workspace is initialized, compiles cleanly, and recognized by pnpm workspaces.
+
+---
+
+## Phase 9: Agent Foundational (Blocking Prerequisites)
+
+**Purpose**: AgentAction entity, custom Openfort MCP tools, allocation optimizer domain logic. MUST complete before agent user stories.
+
+**CRITICAL**: No agent user story work can begin until this phase is complete.
+
+### Tests for Agent Domain
+
+> **NOTE: Write tests FIRST, ensure they FAIL before implementing allocation-optimizer**
+
+- [ ] T053 [P] Write unit tests for AllocationOptimizer in apps/agent/src/test/allocation-optimizer.spec.ts — test cases: computeAllocations() returns correct USDC amounts given strategy allocations and total amount (e.g., $1000 with 60/40 split → $600/$400), computeAllocations() skips pools where gas cost exceeds projected annual yield improvement, computeAllocations() returns empty array when all pools fail cost-benefit check, computeAllocations() respects rebalanceThreshold (skip if APY difference below threshold), computeAllocations() handles single-pool strategy (100% allocation)
+
+### Entity & Infrastructure
+
+- [ ] T054 [P] Create AgentAction entity with @Entity decorator in apps/api/src/modules/investment/domain/agent-action.entity.ts — fields per data-model.md: id (UUID PK), investmentId (UUID), userId (string), actionType (enum: supply, withdraw, rebalance, rate_check), strategyId (UUID), chain (string), protocol (string), asset (string), amount (string), gasCostUsd (number|null), expectedApyBefore (number|null), expectedApyAfter (number|null), rationale (string, max 1000), status (enum: pending, executed, failed, skipped), txHash (string|null), executedAt (Date). Domain methods: static create(...) factory, markExecuted(txHash), markFailed(reason), markSkipped(reason). Add AgentActionStatus enum to apps/api/src/shared/enums.ts
+- [ ] T055 Create AgentActionRepositoryPort interface (save(action): Promise<void>, findByInvestmentId(investmentId): Promise<AgentAction[]>) in apps/api/src/modules/investment/domain/ports/agent-action.repository.port.ts and MikroORM adapter in apps/api/src/modules/investment/infrastructure/agent-action.repository.ts. Register in InvestmentModule providers.
+- [ ] T056 Generate database migration for AgentAction entity — run mikro-orm migration:create from apps/api/, verify migration file in apps/api/src/database/migrations/
+- [ ] T057 Implement AllocationOptimizer pure domain class in apps/agent/src/domain/allocation-optimizer.ts — method computeAllocations(params: { poolAllocations: PoolAllocation[], totalAmountUsd: number, currentRates: Map<string, number>, gasPrice: number, rebalanceThreshold: number }): AllocationDecision[] — for each pool: calculates dollar amount from percentage, estimates annual yield, estimates gas cost for supply tx, applies cost-benefit check (projected yield improvement must exceed gas cost by configurable minimum), returns array of { pool, amountUsd, expectedApy, gasCostUsd, shouldExecute: boolean, rationale: string }
+- [ ] T058 [P] Create custom in-process Openfort MCP tools in apps/agent/src/mcp/openfort-tools.ts — using createSdkMcpServer() and tool() from @anthropic-ai/claude-agent-sdk with Zod schemas. Tools: openfort_create_transaction (params: chainId, contractAddress, functionName, functionArgs, policyId → calls Openfort SDK transactionIntents.create()), openfort_get_balance (params: accountAddress, chainId → returns token balances), openfort_simulate_transaction (params: same as create → calls Openfort SDK simulation endpoint). Each tool wraps @openfort/openfort-node SDK calls. Configure Openfort client with OPENFORT_API_KEY from env.
+- [ ] T059 [P] Create agent system prompt in apps/agent/src/agent-prompt.ts — export function buildAgentPrompt(context: InvestmentContext): string. The prompt instructs Claude to: (1) analyze the strategy's pool allocations, (2) check current Aave rates for each pool using aave_get_reserves tool, (3) check gas prices using get_gas_price tool, (4) run cost-benefit analysis for each allocation, (5) execute supply transactions via openfort_create_transaction for allocations that pass, (6) skip allocations where gas exceeds yield, (7) return structured JSON with all actions and rationale. Include constitution constraints: only whitelisted contracts, respect allocation percentages, prioritize capital preservation over yield.
+
+**Checkpoint**: Agent domain logic tested, entity created, MCP tools defined, prompt ready. Agent stories can now begin.
+
+---
+
+## Phase 10: User Story 5 — Agent Executes Investment (extends US3)
+
+**Goal**: When a user starts investing, the agent autonomously allocates funds to Aave pools based on strategy parameters, live rates, and gas costs.
+
+**Independent Test**: Start investing with a strategy, verify agent executes supply transactions via MCP tools, verify AgentAction records are created with rationale, verify actions appear in API response.
+
+- [ ] T060 [US5] Create agent entry point in apps/agent/src/index.ts — export async function executeInvestment(params: { investmentId, userId, strategy, userAmount, walletAddress }): Promise<AgentResult>. Implementation: (1) build prompt with strategy context via buildAgentPrompt(), (2) configure MCP servers: Aave MCP via SSE at AAVE_MCP_URL, custom Openfort tools in-process, (3) call query() from @anthropic-ai/claude-agent-sdk with prompt, mcpServers config, allowedTools list (mcp__aave__aave_get_reserves, mcp__aave__get_gas_price, mcp__aave__aave_stake, mcp__openfort__openfort_create_transaction, mcp__openfort__openfort_simulate_transaction), permissionMode: "bypassPermissions", maxTurns: 10, (4) collect agent messages and extract structured result, (5) return AgentResult with actions array
+- [ ] T061 [US5] Add POST /investments/execute endpoint to InvestmentController in apps/api/src/modules/investment/infrastructure/investment.controller.ts — accepts { investmentId, userAmount } body with class-validator DTOs, validates investment exists and is active, fetches strategy, calls agent executeInvestment() (import from apps/agent or trigger via HTTP), saves AgentAction records to database via AgentActionRepositoryPort, returns 202 Accepted with { investmentId, status: "executing", message }
+- [ ] T062 [US5] Add GET /investments/:investmentId/actions endpoint to InvestmentController in apps/api/src/modules/investment/infrastructure/investment.controller.ts — fetches AgentAction records by investmentId via AgentActionRepositoryPort, returns array of actions with all fields per contracts/agent.md
+- [ ] T063 [US5] Wire agent trigger into StartInvesting use case in apps/api/src/modules/investment/application/start-investing.use-case.ts — after creating UserInvestment, trigger agent execution (fire-and-forget async call to executeInvestment) passing investment details and strategy. Update the use case response to include a message indicating the agent is processing.
+- [ ] T064 [US5] Add executeInvestment() and fetchAgentActions() functions to frontend API client in apps/web/src/lib/api.ts — executeInvestment(investmentId, userAmount): POST /investments/execute, fetchAgentActions(investmentId): GET /investments/{id}/actions. Add AgentAction type definition.
+
+**Checkpoint**: Starting an investment triggers the agent, which queries Aave rates, applies cost-benefit analysis, executes supply via Openfort, and logs all decisions.
+
+---
+
+## Phase 11: User Story 6 — Agent Handles Strategy Switch (extends US4)
+
+**Goal**: When a user switches strategy, the agent withdraws from old pools and reallocates to new pools per the new strategy's parameters.
+
+**Independent Test**: Switch from one strategy to another, verify agent withdraws from old pools and supplies to new pools, verify AgentAction records show both withdraw and supply actions with rationale.
+
+- [ ] T065 [US6] Add rebalance mode to agent prompt in apps/agent/src/agent-prompt.ts — export function buildRebalancePrompt(context: RebalanceContext): string. Context includes: previousStrategy (with pool allocations), newStrategy (with pool allocations), currentPositions. Prompt instructs Claude to: (1) check current positions via aave_get_user_positions, (2) withdraw from pools not in new strategy, (3) supply to new pools per new allocation percentages, (4) skip moves where gas cost exceeds benefit (constitution principle III), (5) return structured JSON with all actions.
+- [ ] T066 [US6] Add rebalanceInvestment() function to apps/agent/src/index.ts — similar to executeInvestment but uses buildRebalancePrompt(), includes both withdraw and supply tool permissions (mcp__aave__aave_withdraw added to allowedTools)
+- [ ] T067 [US6] Wire agent trigger into SwitchStrategy use case in apps/api/src/modules/investment/application/switch-strategy.use-case.ts — after switching investment records, trigger agent rebalanceInvestment() (fire-and-forget async) passing old strategy, new strategy, and user wallet. Save AgentAction records for both withdraw and supply operations.
+
+**Checkpoint**: Strategy switching triggers intelligent rebalancing — agent withdraws from old pools, supplies to new pools, skips moves where gas exceeds benefit.
+
+---
+
+## Phase 12: User Story 7 — Dashboard Shows Agent Actions
+
+**Goal**: User sees a log of all agent actions on their dashboard, including rationale for each decision.
+
+**Independent Test**: After agent executes, navigate to dashboard, verify agent action log shows each action (supply/withdraw/skip) with amount, pool, APY, gas cost, and plain-English rationale.
+
+- [ ] T068 [P] [US7] Create AgentActions component in apps/web/src/components/dashboard/AgentActions.tsx — props: actions: AgentAction[]. Renders a timeline/list of agent actions with: icon per actionType (supply ↗, withdraw ↙, skip ⏸), pool name (protocol + chain), amount, expected APY, gas cost, status badge (executed/skipped/failed with color coding), rationale text in plain English, timestamp. Empty state: "Your agent hasn't taken any actions yet."
+- [ ] T069 [US7] Update dashboard page at apps/web/src/app/dashboard/page.tsx — after InvestmentSummary, fetch agent actions via fetchAgentActions(investmentId), render AgentActions component below the summary. Add "Agent Activity" section header. Show loading state while fetching actions.
+- [ ] T070 [US7] Add "Investing..." status indicator to dashboard — when investment status is active but no agent actions exist yet, show a pulsing indicator with "Agent is analyzing pools and optimizing your allocation..." message in apps/web/src/components/dashboard/InvestmentSummary.tsx
+
+**Checkpoint**: Dashboard shows full transparency of agent decisions — users can see exactly what the agent did and why (constitution principle IV).
+
+---
+
+## Phase 13: Polish & Validation
+
+**Purpose**: End-to-end validation, error handling, and polish across agent features
+
+- [ ] T071 [P] Add error handling to agent execution — wrap query() call in try/catch in apps/agent/src/index.ts, on failure create AgentAction with status "failed" and error rationale, ensure partial results are still saved. Add timeout (30 seconds) to agent execution.
+- [ ] T072 [P] Add ANTHROPIC_API_KEY validation on agent startup in apps/agent/src/index.ts — throw clear error if missing. Add Openfort API key validation in apps/agent/src/mcp/openfort-tools.ts. Log MCP server connection status on init.
+- [ ] T073 [P] Add agent action status summary to GET /investments/active response in apps/api/src/modules/investment/infrastructure/investment.controller.ts — include lastAgentAction: { actionType, status, executedAt } and totalActions count alongside existing fields
+- [ ] T074 Run full end-to-end validation — start all services (API, Web, Agent, Aave MCP), walk through: home → quiz → result → strategies → start investing → verify agent executes → dashboard shows summary + agent actions → change strategy → verify agent rebalances → dashboard updates. Verify all constitution principles are met (security: policy-enforced txs, transparency: rationale visible, autonomy: cost-benefit checks applied).
+
+---
+
+## Dependencies & Execution Order (Phase 2)
+
+### Phase Dependencies
+
+- **Agent Setup (Phase 8)**: Depends on Phase 1-7 being complete ✅ — start immediately
+- **Agent Foundational (Phase 9)**: Depends on Phase 8 — BLOCKS all agent user stories
+- **US5 Execute Investment (Phase 10)**: Depends on Phase 9 — core agent capability
+- **US6 Switch Strategy (Phase 11)**: Depends on Phase 10 (reuses agent infrastructure)
+- **US7 Dashboard Actions (Phase 12)**: Depends on Phase 10 (needs agent actions API)
+- **Polish (Phase 13)**: Depends on all agent phases complete
+
+### User Story Dependencies (Phase 2)
+
+- **US5 (Execute)**: Depends on Phase 9 — core agent flow, must complete first
+- **US6 (Rebalance)**: Depends on US5 — extends agent with rebalance mode
+- **US7 (Dashboard)**: Depends on US5 — needs agent actions endpoint. Can run in parallel with US6.
+
+### Within Agent Phases
+
+- Tests (T053) MUST be written and FAIL before optimizer implementation (T057)
+- Entity (T054) before repository port (T055) before migration (T056)
+- MCP tools (T058) and prompt (T059) before agent entry point (T060)
+- Agent entry point (T060) before API endpoint wiring (T061-T063)
+- API endpoints before frontend integration (T064, T068-T070)
+
+### Parallel Opportunities (Phase 2)
+
+- T050 + T051: Env config and scripts in parallel
+- T053 + T054: Tests and entity in parallel (different apps)
+- T058 + T059: MCP tools and prompt in parallel (different files)
+- T068 (AgentActions component) can start once T062 (GET actions endpoint) is complete
+- US6 + US7: Can run in parallel after US5 is complete
+- T071 + T072 + T073: All polish tasks in parallel
+
+---
+
+## Parallel Example: Agent Core (US5)
+
+```bash
+# Tests first (write and verify they fail):
+Task T053: "Unit tests for AllocationOptimizer"
+
+# Entity + migration (different app from tests):
+Task T054: "AgentAction entity"
+Task T055: "AgentAction repository port + adapter"
+Task T056: "Database migration for AgentAction"
+
+# Optimizer implementation (makes tests pass):
+Task T057: "AllocationOptimizer domain logic"
+
+# MCP tools + prompt in parallel:
+Task T058: "Custom Openfort MCP tools"
+Task T059: "Agent system prompt"
+
+# Agent entry point (depends on tools + prompt):
+Task T060: "Agent entry point with query()"
+
+# API wiring (depends on entry point):
+Task T061: "POST /investments/execute endpoint"
+Task T062: "GET /investments/:id/actions endpoint"
+Task T063: "Wire agent into StartInvesting use case"
+
+# Frontend (depends on API endpoints):
+Task T064: "Frontend API client for agent"
+```
+
+---
+
+## Implementation Strategy (Phase 2)
+
+### MVP First (US5 Only)
+
+1. Complete Phase 8: Agent Setup
+2. Complete Phase 9: Agent Foundational (CRITICAL — domain logic + MCP tools)
+3. Complete Phase 10: US5 — Agent Executes Investment
+4. **STOP and VALIDATE**: Start investing, verify agent queries rates, executes supply, logs actions
+5. Agent MVP demoable with single investment flow
+
+### Incremental Delivery
+
+1. Agent Setup → apps/agent compiles
+2. Agent Foundational → domain logic tested, MCP tools ready
+3. US5 Execute → Agent runs on investment start → Demo checkpoint
+4. US6 Rebalance → Agent handles strategy switch → Demo checkpoint
+5. US7 Dashboard → Agent actions visible to user → Demo checkpoint
+6. Polish → Error handling, validation, full E2E test
