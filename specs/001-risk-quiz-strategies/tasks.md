@@ -519,16 +519,16 @@ Task T064: "Frontend API client for agent"
 
 ### Implementation for US8
 
-- [ ] T079 [US8] Create WalletSummary component in apps/web/src/components/dashboard/WalletSummary.tsx — props: `{ walletBalanceUsd: number, investedBalanceUsd: number, totalValueUsd: number, smartAccountAddress: string }`. Renders a card with three metric tiles:
+- [x] T079 [US8] Create WalletSummary component in apps/web/src/components/dashboard/WalletSummary.tsx — props: `{ walletBalanceUsd: number, investedBalanceUsd: number, totalValueUsd: number, smartAccountAddress: string }`. Renders a card with three metric tiles:
   1. "Available" — walletBalanceUsd formatted as $X.XX
   2. "Invested" — investedBalanceUsd formatted as $X.XX
   3. "Total Value" — totalValueUsd formatted as $X.XX (larger font, highlighted)
   Display smartAccountAddress below the metrics in a truncated format (0x1234...5678) with a copy button. Use navigator.clipboard.writeText() on click, show "Copied!" toast for 2 seconds.
   Style: Tailwind card with gradient or accent border for visual prominence.
 
-- [ ] T080 [US8] Add zero-balance state to WalletSummary in apps/web/src/components/dashboard/WalletSummary.tsx — when totalValueUsd === 0, show: "$0.00 Total Value" with a message "Fund your wallet to start investing" and the full smart account address displayed prominently with a copy button. Style the zero state with a muted/dashed border and a call-to-action style.
+- [x] T080 [US8] Add zero-balance state to WalletSummary in apps/web/src/components/dashboard/WalletSummary.tsx — when totalValueUsd === 0, show: "$0.00 Total Value" with a message "Fund your wallet to start investing" and the full smart account address displayed prominently with a copy button. Style the zero state with a muted/dashed border and a call-to-action style.
 
-- [ ] T081 [US8] Integrate WalletSummary into dashboard page at apps/web/src/app/dashboard/page.tsx — call fetchPortfolio(userId) alongside existing fetchActiveInvestment(). Pass walletBalanceUsd, investedBalanceUsd, totalValueUsd, smartAccountAddress to WalletSummary. Render WalletSummary above InvestmentSummary. Show WalletSummary even when no active investment (just wallet balance + zero invested). Handle loading and error states.
+- [x] T081 [US8] Integrate WalletSummary into dashboard page at apps/web/src/app/dashboard/page.tsx — call fetchPortfolio(userId) alongside existing fetchActiveInvestment(). Pass walletBalanceUsd, investedBalanceUsd, totalValueUsd, smartAccountAddress to WalletSummary. Render WalletSummary above InvestmentSummary. Show WalletSummary even when no active investment (just wallet balance + zero invested). Handle loading and error states.
 
 **Checkpoint**: Dashboard shows wallet balance card with real on-chain USDC balance. Zero-balance users see funding prompt with copyable address.
 
