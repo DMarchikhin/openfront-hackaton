@@ -27,25 +27,23 @@
 ## Level 1 — System Context
 
 ```mermaid
-C4Context
-  title Openfort DeFi App — System Context
+flowchart TB
+    User(["👤 End User\nDeFi investor"])
 
-  Person(user, "End User", "DeFi investor who wants guided, risk-appropriate yield")
+    subgraph App["Openfort DeFi App"]
+        Core["Openfort DeFi App\nRisk quiz · Strategy selection · AI allocation"]
+    end
 
-  System_Boundary(openfort, "Openfort DeFi App") {
-    System(app, "Openfort DeFi App", "Risk quiz, strategy selection, AI-driven Aave allocation")
-  }
+    Anthropic["☁️ Anthropic API\nClaude Sonnet 4.6"]
+    Openfort["☁️ Openfort Platform\nERC-4337 · Gas sponsorship"]
+    Aave["⛓️ Aave V3 Protocol\nYield supply & withdrawal"]
+    Base["⛓️ Base Blockchain\nSepolia (exec) · Mainnet (rates)"]
 
-  System_Ext(anthropic, "Anthropic API", "Claude Sonnet 4.6 LLM — powers the investment agent reasoning")
-  System_Ext(openfortPlatform, "Openfort Platform", "ERC-4337 smart accounts, gas sponsorship, transaction signing")
-  System_Ext(aave, "Aave V3 Protocol", "On-chain yield supply and withdrawal (Base Mainnet data / Base Sepolia execution)")
-  System_Ext(base, "Base Blockchain", "L2 chain — Sepolia testnet for execution, Mainnet for live rate data")
-
-  Rel(user, app, "Takes risk quiz, browses strategies, views dashboard", "HTTPS")
-  Rel(app, anthropic, "Agent queries Claude Sonnet 4.6", "HTTPS / Claude Agent SDK")
-  Rel(app, openfortPlatform, "Create & submit ERC-4337 UserOperations", "HTTPS REST")
-  Rel(app, aave, "Supply / withdraw USDC", "On-chain via Openfort")
-  Rel(app, base, "Read APY data (mainnet) / execute txns (sepolia)", "RPC / on-chain")
+    User -- "Quiz · Strategies · Dashboard\nHTTPS" --> Core
+    Core -- "Agent SDK\nHTTPS" --> Anthropic
+    Core -- "UserOperations\nHTTPS REST" --> Openfort
+    Core -- "Supply / Withdraw USDC\nOn-chain" --> Aave
+    Core -- "APY data · Transactions\nRPC / On-chain" --> Base
 ```
 
 ---
@@ -53,32 +51,30 @@ C4Context
 ## Level 2 — Container
 
 ```mermaid
-C4Container
-  title Openfort DeFi App — Containers
+flowchart TB
+    User(["👤 End User"])
 
-  Person(user, "End User")
+    subgraph System["Openfort DeFi App"]
+        Web["🌐 Web App\nNext.js 15 · React 19\nPort 3000"]
+        API["⚙️ API Server\nNestJS 10 · MikroORM 6\nPort 3001"]
+        Agent["🤖 Agent Server\nClaude Agent SDK · Node 20\nPort 3002"]
+        DB[("🗄️ PostgreSQL\nPort 5432")]
+        AaveMCP["🔌 Aave MCP Server\nNode.js HTTP\nPort 8080 · External"]
+    end
 
-  System_Boundary(openfort, "Openfort DeFi App") {
-    Container(web, "Web App", "Next.js 15, React 19, Tailwind CSS", "Quiz flow, strategy browser, investment dashboard. Port 3000.")
-    Container(api, "API Server", "NestJS 10, MikroORM 6, TypeScript", "Business logic, domain models, orchestrates agent. Port 3001.")
-    Container(agent, "Agent Server", "Claude Agent SDK, Node.js 20", "AI investment executor — talks to Aave + Openfort. Port 3002.")
-    ContainerDb(db, "PostgreSQL", "Relational DB", "Stores strategies, investments, quiz data, agent action logs. Port 5432.")
-    Container(aaveMcp, "Aave MCP Server", "Node.js HTTP server", "Wraps Aave V3 on-chain data and interaction. Port 8080. External project.")
-  }
+    Anthropic["☁️ Anthropic API"]
+    Openfort["☁️ Openfort Platform"]
+    Base["⛓️ Base Blockchain"]
 
-  System_Ext(anthropic, "Anthropic API", "LLM — Claude Sonnet 4.6")
-  System_Ext(openfortPlatform, "Openfort Platform", "ERC-4337 infra")
-  System_Ext(base, "Base Blockchain", "Sepolia + Mainnet")
-
-  Rel(user, web, "HTTPS", "Browser")
-  Rel(web, api, "REST API calls", "HTTP JSON")
-  Rel(api, db, "ORM queries", "TCP")
-  Rel(api, agent, "POST /execute, POST /rebalance (fire-and-forget)", "HTTP JSON")
-  Rel(agent, anthropic, "query() via Agent SDK", "HTTPS")
-  Rel(agent, aaveMcp, "POST /mcp (tool calls)", "HTTP JSON")
-  Rel(agent, openfortPlatform, "Create transactionIntents", "HTTPS REST")
-  Rel(aaveMcp, base, "Read reserves, supply, withdraw", "RPC / on-chain")
-  Rel(openfortPlatform, base, "Submit UserOperations", "On-chain")
+    User -- "HTTPS" --> Web
+    Web -- "HTTP JSON" --> API
+    API -- "TCP / ORM" --> DB
+    API -- "HTTP JSON\nfire-and-forget" --> Agent
+    Agent -- "HTTPS\nAgent SDK" --> Anthropic
+    Agent -- "HTTP JSON\ntool calls" --> AaveMCP
+    Agent -- "HTTPS REST" --> Openfort
+    AaveMCP -- "RPC / On-chain" --> Base
+    Openfort -- "On-chain\nUserOperations" --> Base
 ```
 
 ---
@@ -88,123 +84,117 @@ C4Container
 ### Web App Components
 
 ```mermaid
-C4Component
-  title Web App — Components (Next.js 15)
+flowchart LR
+    API(["⚙️ API Server"])
 
-  Container_Ext(api, "API Server", "NestJS 10")
+    subgraph Web["Web App — Next.js 15"]
+        direction TB
+        ApiClient["API Client\nlib/api.ts"]
 
-  Container_Boundary(web, "Web App (Next.js 15)") {
-    Component(apiClient, "API Client", "lib/api.ts", "Typed fetch wrappers for all REST endpoints. Base URL from NEXT_PUBLIC_API_URL.")
+        subgraph Quiz["Quiz Flow"]
+            QuizStepper["QuizStepper\nOrchestrates state"]
+            QuestionCard["QuestionCard\nRender question"]
+            ProgressBar["ProgressBar"]
+            RiskResult["RiskResult\nScore & level"]
+        end
 
-    Component(quizStepper, "QuizStepper", "components/quiz/QuizStepper.tsx", "Orchestrates quiz state, loads questions, submits answers, persists userId in localStorage.")
-    Component(questionCard, "QuestionCard", "components/quiz/QuestionCard.tsx", "Renders single question with multiple-choice options and selection feedback.")
-    Component(progressBar, "ProgressBar", "components/quiz/ProgressBar.tsx", "Shows current step / total steps.")
-    Component(riskResult, "RiskResult", "components/quiz/RiskResult.tsx", "Displays risk level badge, score percentage, description, and navigation links.")
+        subgraph Strategies["Strategies"]
+            StrategyCard["StrategyCard\nSummary card"]
+            StrategyDetail["StrategyDetail\nAmount input · Start"]
+        end
 
-    Component(strategyCard, "StrategyCard", "components/strategy/StrategyCard.tsx", "Strategy summary card — risk badge, APY range, chains, recommended highlight.")
-    Component(strategyDetail, "StrategyDetail", "components/strategy/StrategyDetail.tsx", "Full strategy view with pool allocation bars, amount input, Start/Switch action button.")
+        subgraph Dashboard["Dashboard"]
+            InvestmentSummary["InvestmentSummary\nAPY · Allocations"]
+            AgentActions["AgentActions\nAgent log · Tx hashes"]
+        end
+    end
 
-    Component(investmentSummary, "InvestmentSummary", "components/dashboard/InvestmentSummary.tsx", "Active strategy info, APY, daily earnings estimate, pool allocation bars, live agent status.")
-    Component(agentActions, "AgentActions", "components/dashboard/AgentActions.tsx", "Scrollable log of AgentAction records with status badges, tx hashes, APY before/after.")
-  }
-
-  Rel(quizStepper, questionCard, "renders each question")
-  Rel(quizStepper, progressBar, "renders progress")
-  Rel(quizStepper, riskResult, "renders on completion")
-  Rel(quizStepper, apiClient, "fetchQuizQuestions(), submitQuiz()")
-  Rel(strategyDetail, apiClient, "startInvesting(), switchStrategy()")
-  Rel(investmentSummary, apiClient, "fetchActiveInvestment()")
-  Rel(agentActions, apiClient, "fetchAgentActions()")
-  Rel(apiClient, api, "HTTP REST")
+    QuizStepper --> QuestionCard
+    QuizStepper --> ProgressBar
+    QuizStepper --> RiskResult
+    QuizStepper -- "fetchQuestions\nsubmitQuiz" --> ApiClient
+    StrategyDetail -- "startInvesting\nswitchStrategy" --> ApiClient
+    InvestmentSummary -- "fetchActiveInvestment" --> ApiClient
+    AgentActions -- "fetchAgentActions" --> ApiClient
+    ApiClient -- "HTTP REST" --> API
 ```
 
 ### API Server Components
 
 ```mermaid
-C4Component
-  title API Server — Components (NestJS 10, Hexagonal Architecture)
+flowchart TB
+    Web(["🌐 Web App"])
+    Agent(["🤖 Agent Server"])
+    DB(["🗄️ PostgreSQL"])
 
-  Container_Ext(web, "Web App")
-  Container_Ext(agent, "Agent Server")
-  Container_Ext(db, "PostgreSQL")
+    subgraph API["API Server — NestJS 10 · Hexagonal"]
+        direction LR
 
-  Container_Boundary(api, "API Server (NestJS 10)") {
+        subgraph QuizMod["Quiz Module"]
+            QCtrl["QuizController\nGET /quiz/questions\nPOST /quiz/submit"]
+            GetQUC["GetQuizQuestionsUC"]
+            SubmitUC["SubmitQuizUC\nScore → RiskLevel"]
+            QRepo["QuizQuestionRepo"]
+            RARepo["RiskAssessmentRepo"]
+        end
 
-    Component(quizCtrl, "QuizController", "infrastructure/quiz.controller.ts", "GET /quiz/questions, POST /quiz/submit")
-    Component(getQuestionsUC, "GetQuizQuestionsUseCase", "application/get-quiz-questions.use-case.ts", "Fetches questions ordered by displayOrder.")
-    Component(submitQuizUC, "SubmitQuizUseCase", "application/submit-quiz.use-case.ts", "Scores answers, derives RiskLevel (0–33% conservative, 34–66% balanced, 67–100% growth), persists RiskAssessment.")
-    Component(quizQuestionRepo, "QuizQuestionRepository", "infrastructure/quiz-question.repository.ts", "findAllOrdered()")
-    Component(riskAssessmentRepo, "RiskAssessmentRepository", "infrastructure/risk-assessment.repository.ts", "save(assessment)")
+        subgraph StratMod["Strategy Module"]
+            SCtrl["StrategyController\nGET /strategies"]
+            GetSUC["GetStrategiesUC"]
+            SRepo["StrategyRepo"]
+        end
 
-    Component(strategyCtrl, "StrategyController", "infrastructure/strategy.controller.ts", "GET /strategies, GET /strategies/:id")
-    Component(getStrategiesUC, "GetStrategiesUseCase", "application/get-strategies.use-case.ts", "Returns all strategies or filtered by riskLevel.")
-    Component(strategyRepo, "StrategyRepository", "infrastructure/strategy.repository.ts", "findAll(), findByRiskLevel(), findById()")
+        subgraph InvMod["Investment Module"]
+            ICtrl["InvestmentController\nPOST /start · PATCH /switch\nGET /active · GET /:id/actions"]
+            StartUC["StartInvestingUC"]
+            SwitchUC["SwitchStrategyUC"]
+            ExecUC["ExecuteInvestmentUC\nHTTP → Agent Server"]
+            IRepo["InvestmentRepo"]
+            AARepo["AgentActionRepo"]
+        end
+    end
 
-    Component(investCtrl, "InvestmentController", "infrastructure/investment.controller.ts", "POST /investments/start, PATCH /investments/switch, GET /investments/active, POST /investments/execute, GET /investments/:id/actions")
-    Component(startUC, "StartInvestingUseCase", "application/start-investing.use-case.ts", "Creates UserInvestment, validates uniqueness, fires ExecuteInvestmentUseCase async.")
-    Component(switchUC, "SwitchStrategyUseCase", "application/switch-strategy.use-case.ts", "Deactivates old investment, creates new one, fires triggerRebalance() async.")
-    Component(executeUC, "ExecuteInvestmentUseCase", "application/execute-investment.use-case.ts", "HTTP POST to Agent Server /execute or /rebalance. Saves AgentAction entities from response.")
-    Component(investRepo, "InvestmentRepository", "infrastructure/investment.repository.ts", "save(), findActiveByUserId(), findById()")
-    Component(agentActionRepo, "AgentActionRepository", "infrastructure/agent-action.repository.ts", "save(), findByInvestmentId()")
-  }
-
-  Rel(web, quizCtrl, "HTTP")
-  Rel(web, strategyCtrl, "HTTP")
-  Rel(web, investCtrl, "HTTP")
-
-  Rel(quizCtrl, getQuestionsUC, "delegates")
-  Rel(quizCtrl, submitQuizUC, "delegates")
-  Rel(getQuestionsUC, quizQuestionRepo, "findAllOrdered()")
-  Rel(submitQuizUC, riskAssessmentRepo, "save()")
-
-  Rel(strategyCtrl, getStrategiesUC, "delegates")
-  Rel(getStrategiesUC, strategyRepo, "findAll() / findByRiskLevel()")
-
-  Rel(investCtrl, startUC, "delegates")
-  Rel(investCtrl, switchUC, "delegates")
-  Rel(startUC, executeUC, "fire-and-forget async")
-  Rel(switchUC, executeUC, "fire-and-forget async")
-  Rel(executeUC, agent, "POST /execute or /rebalance")
-  Rel(executeUC, agentActionRepo, "save AgentAction records")
-  Rel(startUC, investRepo, "save UserInvestment")
-  Rel(switchUC, investRepo, "save / update")
-
-  Rel(quizQuestionRepo, db, "MikroORM")
-  Rel(riskAssessmentRepo, db, "MikroORM")
-  Rel(strategyRepo, db, "MikroORM")
-  Rel(investRepo, db, "MikroORM")
-  Rel(agentActionRepo, db, "MikroORM")
+    Web --> QCtrl & SCtrl & ICtrl
+    QCtrl --> GetQUC --> QRepo
+    QCtrl --> SubmitUC --> RARepo
+    SCtrl --> GetSUC --> SRepo
+    ICtrl --> StartUC --> IRepo
+    ICtrl --> SwitchUC --> IRepo
+    StartUC -. "async" .-> ExecUC
+    SwitchUC -. "async" .-> ExecUC
+    ExecUC -- "POST /execute\nPOST /rebalance" --> Agent
+    ExecUC --> AARepo
+    QRepo & RARepo & SRepo & IRepo & AARepo -- "MikroORM" --> DB
 ```
 
 ### Agent Server Components
 
 ```mermaid
-C4Component
-  title Agent Server — Components (Claude Agent SDK)
+flowchart TB
+    API(["⚙️ API Server"])
+    Anthropic(["☁️ Anthropic API"])
+    AaveMCPServer(["🔌 Aave MCP :8080"])
+    OpenfortPlatform(["☁️ Openfort Platform"])
 
-  Container_Ext(api, "API Server")
-  Container_Ext(anthropic, "Anthropic API")
-  Container_Ext(aaveMcpServer, "Aave MCP Server :8080")
-  Container_Ext(openfortPlatform, "Openfort Platform")
+    subgraph Agent["Agent Server — Node.js 20"]
+        direction TB
+        HTTPServer["HTTP Server\nserver.ts\nGET /health · POST /execute · POST /rebalance"]
+        Executor["Agent Executor\nindex.ts\nexecuteInvestment() · rebalanceInvestment()"]
+        Prompts["Agent Prompts\nagent-prompt.ts\nbuildAgentPrompt() · buildRebalancePrompt()"]
+        AaveAdapter["Aave MCP Adapter\nmcp/aave-tools.ts\naave_get_reserves · get_gas_price · aave_stake"]
+        OpenfortMCP["Openfort MCP Tools\nmcp/openfort-tools.ts\ncreate_transaction · get_balance"]
+        Optimizer["AllocationOptimizer\ndomain/allocation-optimizer.ts\ncomputeAllocations()"]
+    end
 
-  Container_Boundary(agent, "Agent Server (Node.js 20)") {
-    Component(httpServer, "HTTP Server", "server.ts", "Express-like HTTP server on port 3002. Routes: GET /health, POST /execute, POST /rebalance. Deletes CLAUDECODE env var at startup.")
-    Component(agentExecutor, "Agent Executor", "index.ts", "executeInvestment() and rebalanceInvestment(). Iterates AsyncGenerator<SDKMessage> from SDK query(). Parses JSON result from agent output.")
-    Component(agentPrompt, "Agent Prompts", "agent-prompt.ts", "buildAgentPrompt() and buildRebalancePrompt(). Contains chain-aware contract addresses, safety rules, JSON output schema.")
-    Component(aaveMcpAdapter, "Aave MCP Adapter", "mcp/aave-tools.ts", "In-process MCP server wrapping POST /mcp HTTP endpoint. Tools: aave_get_reserves, get_gas_price, get_balance, aave_stake, aave_withdraw.")
-    Component(openfortMcp, "Openfort MCP Tools", "mcp/openfort-tools.ts", "In-process MCP server. Tools: openfort_create_transaction (ERC-4337 or EOA fallback), openfort_get_balance, openfort_simulate_transaction.")
-    Component(allocOptimizer, "AllocationOptimizer", "domain/allocation-optimizer.ts", "computeAllocations() — calculates per-pool USD amounts, checks gas vs annual yield, applies rebalance threshold.")
-  }
-
-  Rel(api, httpServer, "POST /execute, POST /rebalance")
-  Rel(httpServer, agentExecutor, "delegates params")
-  Rel(agentExecutor, agentPrompt, "buildAgentPrompt() / buildRebalancePrompt()")
-  Rel(agentExecutor, aaveMcpAdapter, "registers as MCP server")
-  Rel(agentExecutor, openfortMcp, "registers as MCP server")
-  Rel(agentExecutor, anthropic, "query() via Claude Agent SDK")
-  Rel(aaveMcpAdapter, aaveMcpServer, "POST /mcp (tool calls)")
-  Rel(openfortMcp, openfortPlatform, "createTransactionIntent()")
-  Rel(agentExecutor, allocOptimizer, "computeAllocations() for decision support")
+    API -- "POST /execute\nPOST /rebalance" --> HTTPServer
+    HTTPServer --> Executor
+    Executor --> Prompts
+    Executor --> AaveAdapter
+    Executor --> OpenfortMCP
+    Executor --> Optimizer
+    Executor -- "query() Agent SDK" --> Anthropic
+    AaveAdapter -- "POST /mcp" --> AaveMCPServer
+    OpenfortMCP -- "createTransactionIntent" --> OpenfortPlatform
 ```
 
 ---
@@ -215,207 +205,183 @@ C4Component
 
 ```mermaid
 classDiagram
-  class QuizQuestion {
-    +UUID id
-    +string text
-    +number displayOrder
-    +QuizOption[] options
-    +Date createdAt
-  }
+    direction LR
 
-  class QuizOption {
-    +string label
-    +number scoreWeight
-  }
+    class QuizQuestion {
+        +UUID id
+        +string text
+        +number displayOrder
+        +QuizOption[] options
+        +Date createdAt
+    }
 
-  class RiskAssessment {
-    +UUID id
-    +string userId
-    +QuizAnswer[] answers
-    +number totalScore
-    +RiskLevel riskLevel
-    +Date completedAt
-    +create(userId) RiskAssessment$
-    +addAnswer(questionId, scoreWeight) void
-    +complete(totalQuestions, maxPossibleScore) void
-    +getRiskLevel() RiskLevel
-  }
+    class QuizOption {
+        +string label
+        +number scoreWeight
+    }
 
-  class QuizAnswer {
-    +string questionId
-    +number score
-  }
+    class RiskAssessment {
+        +UUID id
+        +string userId
+        +RiskLevel riskLevel
+        +number totalScore
+        +Date completedAt
+        +addAnswer(questionId, scoreWeight)
+        +complete(totalQuestions, maxScore)
+    }
 
-  class InvestmentStrategy {
-    +UUID id
-    +string name
-    +RiskLevel riskLevel
-    +string description
-    +PoolAllocation[] poolAllocations
-    +number expectedApyMin
-    +number expectedApyMax
-    +number rebalanceThreshold
-    +string[] allowedChains
-    +Date createdAt
-    +matchesRiskLevel(level) boolean
-    +validateAllocations() void
-  }
+    class InvestmentStrategy {
+        +UUID id
+        +string name
+        +RiskLevel riskLevel
+        +PoolAllocation[] poolAllocations
+        +number expectedApyMin
+        +number expectedApyMax
+        +number rebalanceThreshold
+        +matchesRiskLevel(level) bool
+    }
 
-  class PoolAllocation {
-    +string chain
-    +string protocol
-    +string asset
-    +number allocationPercentage
-  }
+    class PoolAllocation {
+        +string chain
+        +string protocol
+        +string asset
+        +number allocationPercentage
+    }
 
-  class UserInvestment {
-    +UUID id
-    +string userId
-    +UUID strategyId
-    +InvestmentStatus status
-    +Date activatedAt
-    +Date deactivatedAt
-    +create(userId, strategyId) UserInvestment$
-    +activate(strategyId) void
-    +deactivate() void
-  }
+    class UserInvestment {
+        +UUID id
+        +string userId
+        +UUID strategyId
+        +InvestmentStatus status
+        +Date activatedAt
+        +activate(strategyId)
+        +deactivate()
+    }
 
-  class AgentAction {
-    +UUID id
-    +UUID investmentId
-    +string userId
-    +AgentActionType actionType
-    +UUID strategyId
-    +string chain
-    +string protocol
-    +string asset
-    +string amount
-    +number gasCostUsd
-    +number expectedApyBefore
-    +number expectedApyAfter
-    +string rationale
-    +AgentActionStatus status
-    +string txHash
-    +Date executedAt
-    +create(params) AgentAction$
-    +markExecuted(txHash) void
-    +markFailed(reason) void
-    +markSkipped(reason) void
-  }
+    class AgentAction {
+        +UUID id
+        +UUID investmentId
+        +AgentActionType actionType
+        +string asset
+        +string amount
+        +number gasCostUsd
+        +number expectedApyBefore
+        +number expectedApyAfter
+        +AgentActionStatus status
+        +string txHash
+        +markExecuted(txHash)
+        +markFailed(reason)
+    }
 
-  QuizQuestion "1" *-- "many" QuizOption
-  RiskAssessment "1" *-- "many" QuizAnswer
-  InvestmentStrategy "1" *-- "many" PoolAllocation
-  UserInvestment "many" --> "1" InvestmentStrategy : references strategyId
-  AgentAction "many" --> "1" UserInvestment : references investmentId
+    QuizQuestion "1" *-- "many" QuizOption
+    RiskAssessment "1" *-- "many" QuizAnswer
+    InvestmentStrategy "1" *-- "many" PoolAllocation
+    UserInvestment "many" --> "1" InvestmentStrategy
+    AgentAction "many" --> "1" UserInvestment
 ```
 
 ### Enums
 
 ```mermaid
-classDiagram
-  class RiskLevel {
-    <<enumeration>>
-    CONSERVATIVE
-    BALANCED
-    GROWTH
-  }
+flowchart LR
+    subgraph RiskLevel
+        C["CONSERVATIVE"]
+        B["BALANCED"]
+        G["GROWTH"]
+    end
 
-  class InvestmentStatus {
-    <<enumeration>>
-    ACTIVE
-    INACTIVE
-  }
+    subgraph InvestmentStatus
+        A["ACTIVE"]
+        I["INACTIVE"]
+    end
 
-  class AgentActionType {
-    <<enumeration>>
-    SUPPLY
-    WITHDRAW
-    REBALANCE
-    RATE_CHECK
-  }
+    subgraph AgentActionType
+        S["SUPPLY"]
+        W["WITHDRAW"]
+        R["REBALANCE"]
+        RC["RATE_CHECK"]
+    end
 
-  class AgentActionStatus {
-    <<enumeration>>
-    PENDING
-    EXECUTED
-    FAILED
-    SKIPPED
-  }
+    subgraph AgentActionStatus
+        P["PENDING"]
+        E["EXECUTED"]
+        F["FAILED"]
+        SK["SKIPPED"]
+    end
 ```
 
 ### AllocationOptimizer
 
 ```mermaid
-classDiagram
-  class AllocationOptimizer {
-    +computeAllocations(params) AllocationDecision[]
-  }
+flowchart LR
+    subgraph Input["ComputeParams"]
+        P1["poolAllocations[]"]
+        P2["totalAmountUsd"]
+        P3["currentRates Map"]
+        P4["gasPrice"]
+        P5["rebalanceThreshold"]
+    end
 
-  class ComputeParams {
-    +PoolAllocation[] poolAllocations
-    +number totalAmountUsd
-    +Map~string_number~ currentRates
-    +number gasPrice
-    +number rebalanceThreshold
-    +number currentApy
-  }
+    Opt["AllocationOptimizer\ncomputeAllocations()"]
 
-  class AllocationDecision {
-    +PoolAllocation pool
-    +number amountUsd
-    +number expectedApy
-    +number annualYieldUsd
-    +boolean shouldExecute
-    +string rationale
-  }
+    subgraph Output["AllocationDecision[]"]
+        O1["pool: PoolAllocation"]
+        O2["amountUsd"]
+        O3["expectedApy"]
+        O4["annualYieldUsd"]
+        O5["shouldExecute: bool"]
+        O6["rationale: string"]
+    end
 
-  AllocationOptimizer ..> ComputeParams : accepts
-  AllocationOptimizer ..> AllocationDecision : returns
+    Input --> Opt --> Output
 ```
 
 ### Investment Execution Sequence
 
 ```mermaid
 sequenceDiagram
-  participant User
-  participant Web as Web App
-  participant API as API Server
-  participant Agent as Agent Server
-  participant Claude as Anthropic API
-  participant AaveMCP as Aave MCP :8080
-  participant Openfort as Openfort Platform
-  participant Chain as Base Blockchain
+    actor User
+    participant Web as Web App
+    participant API as API Server
+    participant Agent as Agent Server
+    participant Claude as Anthropic (Claude)
+    participant Aave as Aave MCP :8080
+    participant Openfort as Openfort Platform
+    participant Chain as Base Blockchain
 
-  User->>Web: Click "Start Investing" (amount, strategyId)
-  Web->>API: POST /investments/start
-  API->>API: StartInvestingUseCase — create UserInvestment
-  API-->>Web: 201 {investmentId, status: active}
+    User->>Web: Start Investing (amount, strategyId)
+    Web->>API: POST /investments/start
+    API-->>Web: 201 { investmentId, status: active }
 
-  Note over API,Agent: Fire-and-forget async
+    Note over API,Agent: 🔄 Fire-and-forget async
 
-  API->>Agent: POST /execute {investmentId, strategy, userAmount, walletAddress}
-  Agent->>Claude: query(prompt + MCP servers) via Agent SDK
-  Claude->>AaveMCP: aave_get_reserves()
-  AaveMCP->>Chain: Read Aave V3 reserves (Base Mainnet)
-  AaveMCP-->>Claude: APY data per token/pool
-  Claude->>AaveMCP: get_gas_price()
-  AaveMCP-->>Claude: gasPrice gwei, USD cost per tx
-  Note over Claude: AllocationOptimizer logic: skip if gas > annual yield
-  Claude->>Openfort: openfort_create_transaction(aave_supply, USDC, amount)
-  Openfort->>Chain: Submit ERC-4337 UserOperation (Base Sepolia)
-  Chain-->>Openfort: txHash
-  Openfort-->>Claude: {txHash, status: executed}
-  Claude-->>Agent: JSON result {actions[], totalAllocated, averageApy, summary}
-  Agent->>API: (response parsed)
-  API->>API: Save AgentAction entities (EXECUTED, txHash)
+    API->>Agent: POST /execute { investmentId, strategy, amount, wallet }
+    Agent->>Claude: query(prompt + MCP servers)
 
-  User->>Web: Open Dashboard
-  Web->>API: GET /investments/active?userId=...
-  API-->>Web: ActiveInvestment + last agent action
-  Web->>API: GET /investments/:id/actions
-  API-->>Web: AgentAction[] history
-  Web-->>User: Dashboard with strategy info + agent log
+    Claude->>Aave: aave_get_reserves()
+    Aave->>Chain: Read Aave V3 reserves (Base Mainnet)
+    Aave-->>Claude: APY data per pool
+
+    Claude->>Aave: get_gas_price()
+    Aave-->>Claude: gasPrice gwei + USD cost
+
+    Note over Claude: AllocationOptimizer: skip if gas > annual yield
+
+    Claude->>Openfort: openfort_create_transaction(supply USDC)
+    Openfort->>Chain: Submit ERC-4337 UserOp (Base Sepolia)
+    Chain-->>Openfort: txHash
+    Openfort-->>Claude: { txHash, status: executed }
+
+    Claude-->>Agent: JSON { actions[], totalAllocated, averageApy }
+    Agent->>API: (parsed response)
+    API->>API: Save AgentAction entities (EXECUTED + txHash)
+
+    User->>Web: Open Dashboard
+    Web->>API: GET /investments/active?userId=...
+    API-->>Web: ActiveInvestment + last agent action
+    Web->>API: GET /investments/:id/actions
+    API-->>Web: AgentAction[] history
+    Web-->>User: Dashboard: strategy · APY · agent log
 ```
 
 ---
@@ -659,4 +625,4 @@ cd apps/agent && env -u CLAUDECODE tsx src/server.ts   # port 3002
 cd apps/web && pnpm dev                        # port 3000
 ```
 
-> **Note:** The `CLAUDECODE` environment variable is unset before starting the agent server because the Claude CLI refuses to spawn child processes inside an existing Claude Code session. The agent server's `server.ts` also calls `delete process.env.CLAUDECODE` at startup for the same reason.
+> **Note:** The `CLAUDECODE` environment variable is unset before starting the agent server because the Claude CLI refuses to spawn child processes inside an existing Claude Code session. The agent server's `server.ts` also calls `delete process.env.CLAUDECODE` at
