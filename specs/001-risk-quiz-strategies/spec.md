@@ -149,6 +149,44 @@ the new strategy. Delivers value by giving users ongoing control.
 
 ---
 
+### User Story 5 - View Wallet Balance on Dashboard (Priority: P3)
+
+A user opens the dashboard and sees a financial summary card showing
+their account overview: available USDC balance (uninvested funds
+sitting in the wallet), invested balance (funds currently in pools),
+and total account value (sum of both). This is visible whether or not
+the user has an active investment. If the wallet has zero funds, a
+funding prompt with the wallet address is shown.
+
+**Why this priority**: Same priority as starting to invest — users
+need to know how much money they have before and during investing.
+The balance card is the most fundamental financial information on
+the dashboard.
+
+**Independent Test**: Can be tested by opening the dashboard and
+verifying the displayed balances match on-chain wallet and pool
+positions. Delivers value by giving users immediate visibility into
+their total account state.
+
+**Acceptance Scenarios**:
+
+1. **Given** a user has a funded wallet, **When** they open the
+   dashboard, **Then** they see a financial summary card showing:
+   available balance (uninvested USDC), invested balance (in pools),
+   and total account value.
+2. **Given** a user has zero USDC in their wallet and no investments,
+   **When** they view the dashboard, **Then** they see a $0.00
+   balance with a funding prompt and their wallet address displayed
+   in a copyable format.
+3. **Given** a user has both uninvested and invested funds, **When**
+   they view the dashboard, **Then** the total value equals the sum
+   of available and invested balances.
+4. **Given** a user has just deposited USDC, **When** they refresh
+   the dashboard, **Then** the available balance updates to reflect
+   the new deposit.
+
+---
+
 ### Edge Cases
 
 - What happens when Aave pool rates change dramatically after a
@@ -164,6 +202,11 @@ the new strategy. Delivers value by giving users ongoing control.
 - What happens when all strategies show similar APY ranges? The
   strategies still differ in pool diversification and chain
   preferences; the UI clarifies the trade-offs beyond just APY.
+- What happens when the blockchain RPC is temporarily unreachable
+  for balance reads? The dashboard shows a friendly error message
+  asking the user to refresh, rather than stale or fabricated data.
+- What happens when the wallet has never been set up? The dashboard
+  shows a setup prompt instead of a balance card.
 
 ## Requirements *(mandatory)*
 
@@ -183,8 +226,19 @@ the new strategy. Delivers value by giving users ongoing control.
 - **FR-005**: System MUST configure the AI agent with the selected
   strategy's parameters (target pools, allocation percentages,
   allowed chains, rebalance threshold) upon user confirmation.
-- **FR-006**: System MUST display real-time dashboard data (balance,
-  active strategy, current APY, earnings) once investing begins.
+- **FR-006**: System MUST display real-time dashboard data (active
+  strategy, current APY, earnings) once investing begins.
+- **FR-011**: System MUST display a financial summary card on the
+  dashboard showing: available balance (uninvested USDC in wallet),
+  invested balance (funds in pools), and total account value (sum
+  of both), formatted as dollar amounts.
+- **FR-012**: System MUST read the wallet balance from the blockchain
+  in real time when the dashboard loads.
+- **FR-013**: System MUST display the smart account wallet address
+  in a copyable format so users can fund their account from external
+  sources.
+- **FR-014**: System MUST show a zero-balance funding prompt when
+  the wallet has no USDC, including the wallet address.
 - **FR-007**: System MUST allow users to change their active
   strategy at any time, triggering a fund reallocation.
 - **FR-008**: System MUST persist the user's risk profile and
@@ -210,6 +264,10 @@ the new strategy. Delivers value by giving users ongoing control.
 - **User Strategy Selection**: The binding between a user and their
   chosen strategy. Attributes: user reference, selected strategy,
   activation date, status (active/inactive).
+- **Wallet Balance**: The user's current USDC holdings in their
+  smart account. Attributes: available amount (uninvested USDC),
+  invested amount (in pools), total value (sum of both). Read from
+  on-chain data, not persisted.
 
 ## Assumptions
 
@@ -228,6 +286,12 @@ the new strategy. Delivers value by giving users ongoing control.
 - Testnet (Base Sepolia) is the target environment for development
   and demo.
 
+## Clarifications
+
+### Session 2026-02-28
+
+- Q: What should "wallet money balance" include on the dashboard? → A: Show a financial summary with available balance (uninvested USDC), invested balance (in pools), and total account value.
+
 ## Success Criteria *(mandatory)*
 
 ### Measurable Outcomes
@@ -244,3 +308,9 @@ the new strategy. Delivers value by giving users ongoing control.
   selected strategy's pool and chain constraints.
 - **SC-006**: Users can switch strategies and see funds begin
   reallocation within 30 seconds of confirmation.
+- **SC-007**: Users see their wallet balance (available, invested,
+  total) within 2 seconds of loading the dashboard.
+- **SC-008**: 100% of displayed balances accurately reflect on-chain
+  data at the time of fetch.
+- **SC-009**: Users can copy their wallet address in one action to
+  fund their account.

@@ -1,8 +1,9 @@
-import { Body, Controller, Get, HttpCode, Inject, NotFoundException, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpException, Inject, InternalServerErrorException, NotFoundException, Param, Patch, Post, Query } from '@nestjs/common';
 import { IsNotEmpty, IsString, IsUUID } from 'class-validator';
 import { StartInvestingUseCase } from '../application/start-investing.use-case';
 import { SwitchStrategyUseCase } from '../application/switch-strategy.use-case';
 import { ExecuteInvestmentUseCase } from '../application/execute-investment.use-case';
+import { GetPortfolioUseCase } from '../application/get-portfolio.use-case';
 import { InvestmentRepositoryPort } from '../domain/ports/investment.repository.port';
 import { AgentActionRepositoryPort } from '../domain/ports/agent-action.repository.port';
 import { StrategyRepositoryPort } from '../../strategy/domain/ports/strategy.repository.port';
@@ -48,6 +49,7 @@ export class InvestmentController {
     private readonly startInvestingUseCase: StartInvestingUseCase,
     private readonly switchStrategyUseCase: SwitchStrategyUseCase,
     private readonly executeInvestmentUseCase: ExecuteInvestmentUseCase,
+    private readonly getPortfolioUseCase: GetPortfolioUseCase,
     @Inject('InvestmentRepositoryPort')
     private readonly investmentRepo: InvestmentRepositoryPort,
     @Inject('AgentActionRepositoryPort')
@@ -55,6 +57,19 @@ export class InvestmentController {
     @Inject('StrategyRepositoryPort')
     private readonly strategyRepo: StrategyRepositoryPort,
   ) {}
+
+  @Get('portfolio')
+  async getPortfolio(@Query('userId') userId: string) {
+    if (!userId) throw new NotFoundException('userId query param required');
+    try {
+      const portfolio = await this.getPortfolioUseCase.execute(userId);
+      if (!portfolio) throw new NotFoundException('No active investment found');
+      return portfolio;
+    } catch (err) {
+      if (err instanceof HttpException) throw err;
+      throw new InternalServerErrorException('Failed to read on-chain balance');
+    }
+  }
 
   @Post('start')
   @HttpCode(201)

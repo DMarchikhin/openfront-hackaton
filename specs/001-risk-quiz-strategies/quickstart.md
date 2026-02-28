@@ -132,6 +132,33 @@ curl -X POST http://localhost:3001/api/investments/execute \
 curl http://localhost:3001/api/investments/<id>/actions | jq
 ```
 
+## Portfolio Feature (Phase 3)
+
+### Verify Portfolio Endpoint
+```bash
+# Replace USER_ID with your actual user ID from localStorage
+curl http://localhost:3001/api/investments/portfolio?userId=USER_ID | jq .
+```
+
+Expected: JSON with `pools[]` array, each pool having `onChainBalanceUsd`, `actions[]`.
+
+### View Portfolio on Dashboard
+Open http://localhost:3000/dashboard — should show:
+- Investment summary (existing)
+- **Portfolio section** with pool cards showing on-chain balances + yield
+- Click a pool card to expand per-pool transaction history
+- Agent actions timeline (existing)
+
+### Key Portfolio Files
+| File | Purpose |
+|------|---------|
+| `apps/api/src/modules/investment/application/get-portfolio.use-case.ts` | On-chain balance reads + action aggregation |
+| `apps/web/src/components/dashboard/PortfolioSection.tsx` | Pool cards with balances |
+| `apps/web/src/components/dashboard/PoolTransactions.tsx` | Per-pool transaction history |
+
+### Environment (no new vars needed)
+Portfolio reads `BASE_SEPOLIA_RPC_URL` (for viem) and `OPENFORT_SMART_ACCOUNT_ADDRESS` (balance target), both already set.
+
 ## Project Structure
 
 ```

@@ -149,3 +149,44 @@ export const executeInvestment = (investmentId: string, userAmount: number) =>
 
 export const fetchAgentActions = (investmentId: string) =>
   request<AgentActionsResponse>(`/investments/${investmentId}/actions`);
+
+// --- Portfolio types ---
+
+export interface PoolAction {
+  id: string;
+  actionType: string;
+  amountUsd: number;
+  expectedApyAfter: number | null;
+  status: string;
+  txHash: string | null;
+  rationale: string;
+  executedAt: string;
+}
+
+export interface PoolPosition {
+  pool: { chain: string; protocol: string; asset: string };
+  onChainBalanceUsd: number;
+  totalSuppliedUsd: number;
+  totalWithdrawnUsd: number;
+  netInvestedUsd: number;
+  earnedYieldUsd: number;
+  latestApyPercent: number | null;
+  allocationPercent: number;
+  actions: PoolAction[];
+}
+
+export interface PortfolioResponse {
+  investmentId: string;
+  strategyName: string;
+  riskLevel: string;
+  totalValueUsd: number;
+  totalInvestedUsd: number;
+  totalEarnedUsd: number;
+  walletBalanceUsd: number;
+  investedBalanceUsd: number;
+  smartAccountAddress: string;
+  pools: PoolPosition[];
+}
+
+export const fetchPortfolio = (userId: string) =>
+  request<PortfolioResponse>(`/investments/portfolio?userId=${userId}`);

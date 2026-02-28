@@ -467,3 +467,173 @@ Task T064: "Frontend API client for agent"
 4. US6 Rebalance → Agent handles strategy switch → Demo checkpoint
 5. US7 Dashboard → Agent actions visible to user → Demo checkpoint
 6. Polish → Error handling, validation, full E2E test
+
+---
+
+# Phase 3: Portfolio Dashboard & Wallet Balance
+
+**Context**: US1-US7 (quiz, strategies, agent, dashboard) are all implemented. The following tasks add: (1) a portfolio API that reads on-chain aToken/USDC balances, (2) a wallet balance summary card on the dashboard, and (3) pool position cards with per-pool transaction history.
+
+**Spec references**: User Story 5 (Wallet Balance), FR-011 through FR-014, SC-007 through SC-009
+**Plan reference**: plan.md — Portfolio Dashboard architecture
+
+---
+
+## Phase 14: Portfolio Backend API (Foundational)
+
+**Purpose**: New API endpoint that reads on-chain balances + aggregates AgentAction records per pool. MUST complete before any portfolio frontend work.
+
+- [x] T075 Add `viem` dependency to apps/api/ — run `pnpm add viem` from apps/api/. This enables on-chain balance reads (aToken + USDC) directly from the NestJS API without routing through the agent.
+
+- [x] T076 Create GetPortfolioUseCase in apps/api/src/modules/investment/application/get-portfolio.use-case.ts — inject InvestmentRepositoryPort, AgentActionRepositoryPort, StrategyRepositoryPort. Implement `execute(userId: string): Promise<PortfolioResponse>`:
+  1. Find active UserInvestment via investmentRepo.findActiveByUserId(userId). Return 404 response if none.
+  2. Load strategy via strategyRepo.findById(investment.strategyId).
+  3. Load all AgentAction records via agentActionRepo.findByInvestmentId(investment.id).
+  4. Create viem publicClient with baseSepolia chain + http(BASE_SEPOLIA_RPC_URL) transport.
+  5. Read USDC wallet balance: `publicClient.readContract({ address: '0x036CbD53842c5426634e7929541eC2318f3dCF7e', abi: parseAbi(['function balanceOf(address) view returns (uint256)']), functionName: 'balanceOf', args: [OPENFORT_SMART_ACCOUNT_ADDRESS] })` → divide by 1e6 for USD.
+  6. Read aToken (aUSDC) balance: same pattern with address `0xf53B60F4006cab2b3C4688ce41fD5362427A2A66` → divide by 1e6 for USD.
+  7. Group AgentAction records by unique (chain, protocol, asset) tuple. For each pool:
+     - totalSupplied = SUM(amount) where actionType='supply' and status='executed'
+     - totalWithdrawn = SUM(amount) where actionType='withdraw' and status='executed'
+     - netInvested = totalSupplied - totalWithdrawn
+     - earnedYield = onChainBalance - netInvested
+     - latestApy = most recent action with non-null expectedApyAfter
+     - allocationPercent from strategy poolAllocations
+     - actions = all actions for this pool as PoolAction[], ordered by executedAt DESC
+  8. Build PortfolioResponse: investmentId, strategyName, riskLevel, totalValueUsd (USDC wallet + aToken balances), totalInvestedUsd (sum of netInvested across pools), totalEarnedUsd (totalValue - totalInvested), walletBalanceUsd (uninvested USDC), investedBalanceUsd (sum of aToken balances), smartAccountAddress, pools[].
+  9. Wrap on-chain reads in try/catch — return error response on RPC failure.
+
+- [x] T077 Add GET /api/investments/portfolio endpoint to apps/api/src/modules/investment/infrastructure/investment.controller.ts — accept `userId` query param, call GetPortfolioUseCase.execute(userId), return PortfolioResponse as JSON. Return 404 if no active investment. Return 500 with `{ error: "Failed to read on-chain balance" }` on RPC failure. Register GetPortfolioUseCase in InvestmentModule providers.
+
+- [x] T078 Add fetchPortfolio() function and PortfolioResponse types to apps/web/src/lib/api.ts — types: PortfolioResponse { investmentId, strategyName, riskLevel, totalValueUsd, totalInvestedUsd, totalEarnedUsd, walletBalanceUsd, investedBalanceUsd, smartAccountAddress, pools: PoolPosition[] }, PoolPosition { pool: { chain, protocol, asset }, onChainBalanceUsd, totalSuppliedUsd, totalWithdrawnUsd, netInvestedUsd, earnedYieldUsd, latestApyPercent, allocationPercent, actions: PoolAction[] }, PoolAction { id, actionType, amountUsd, expectedApyAfter, status, txHash, rationale, executedAt }. Function: `fetchPortfolio(userId: string): Promise<PortfolioResponse>` — GET /investments/portfolio?userId=...
+
+**Checkpoint**: Portfolio API endpoint functional — `curl http://localhost:3001/api/investments/portfolio?userId=USER_ID` returns full portfolio with on-chain balances.
+
+---
+
+## Phase 15: US8 — Wallet Balance Card on Dashboard
+
+**Goal**: Show a financial summary card at the top of the dashboard with available USDC (wallet), invested USDC (in pools), and total account value. Copyable wallet address. Zero-balance funding prompt.
+
+**Independent Test**: Open dashboard → verify the three balance values (available, invested, total) match on-chain data. Copy wallet address → verify it matches the smart account address.
+
+### Implementation for US8
+
+- [ ] T079 [US8] Create WalletSummary component in apps/web/src/components/dashboard/WalletSummary.tsx — props: `{ walletBalanceUsd: number, investedBalanceUsd: number, totalValueUsd: number, smartAccountAddress: string }`. Renders a card with three metric tiles:
+  1. "Available" — walletBalanceUsd formatted as $X.XX
+  2. "Invested" — investedBalanceUsd formatted as $X.XX
+  3. "Total Value" — totalValueUsd formatted as $X.XX (larger font, highlighted)
+  Display smartAccountAddress below the metrics in a truncated format (0x1234...5678) with a copy button. Use navigator.clipboard.writeText() on click, show "Copied!" toast for 2 seconds.
+  Style: Tailwind card with gradient or accent border for visual prominence.
+
+- [ ] T080 [US8] Add zero-balance state to WalletSummary in apps/web/src/components/dashboard/WalletSummary.tsx — when totalValueUsd === 0, show: "$0.00 Total Value" with a message "Fund your wallet to start investing" and the full smart account address displayed prominently with a copy button. Style the zero state with a muted/dashed border and a call-to-action style.
+
+- [ ] T081 [US8] Integrate WalletSummary into dashboard page at apps/web/src/app/dashboard/page.tsx — call fetchPortfolio(userId) alongside existing fetchActiveInvestment(). Pass walletBalanceUsd, investedBalanceUsd, totalValueUsd, smartAccountAddress to WalletSummary. Render WalletSummary above InvestmentSummary. Show WalletSummary even when no active investment (just wallet balance + zero invested). Handle loading and error states.
+
+**Checkpoint**: Dashboard shows wallet balance card with real on-chain USDC balance. Zero-balance users see funding prompt with copyable address.
+
+---
+
+## Phase 16: US9 — Portfolio Pool Positions & Transaction History
+
+**Goal**: Show pool cards with on-chain balances, supplied/earned amounts, and expandable per-pool transaction history.
+
+**Independent Test**: Open dashboard with an active investment that has executed supply actions → verify pool cards show on-chain aToken balance, net invested, earned yield, latest APY. Click a pool card → verify per-pool transaction list appears with correct actions.
+
+### Implementation for US9
+
+- [ ] T082 [P] [US9] Create PoolTransactions component in apps/web/src/components/dashboard/PoolTransactions.tsx — props: `{ actions: PoolAction[] }`. Renders a compact transaction timeline for a single pool:
+  - Each action shows: icon by actionType (supply ↗, withdraw ↙, rate_check ◎, rebalance ⇄), description ("Supply $10.00 USDC" or "Rate Check"), status badge (executed/failed/skipped), APY after action (if non-null), truncated txHash as link (if non-null), timestamp formatted as "Feb 28, 2:30 PM", rationale text in smaller font.
+  - Sort by executedAt DESC (newest first).
+  - Empty state: "No transactions for this pool yet."
+
+- [ ] T083 [P] [US9] Create PortfolioSection component in apps/web/src/components/dashboard/PortfolioSection.tsx — props: `{ pools: PoolPosition[] }`. Renders one card per pool:
+  - Pool header: "{asset} on {protocol} ({chain})" e.g. "USDC on Aave V3 (Base Sepolia)"
+  - Metrics row: Current Balance (onChainBalanceUsd as $X.XX), Supplied (totalSuppliedUsd), Earned (earnedYieldUsd with green color if positive)
+  - APY badge: latestApyPercent formatted as "X.X% APY"
+  - Allocation badge: allocationPercent formatted as "XX% allocation"
+  - Expandable section: click card to toggle PoolTransactions component visibility for that pool's actions.
+  - Use useState to track which pool is expanded (accordion pattern — one at a time).
+
+- [ ] T084 [US9] Integrate PortfolioSection into dashboard page at apps/web/src/app/dashboard/page.tsx — pass portfolio.pools to PortfolioSection. Render between WalletSummary and AgentActions. Show "Your Pools" section header. Show empty state "No pool positions yet" when pools array is empty. Ensure loading skeleton shows while fetchPortfolio is in flight.
+
+**Checkpoint**: Dashboard shows pool cards with real on-chain balances and expandable per-pool transaction history.
+
+---
+
+## Phase 17: Portfolio Polish & Validation
+
+**Purpose**: Error handling, edge cases, and end-to-end validation for portfolio features
+
+- [ ] T085 [P] Add error handling for RPC failures in apps/web/src/app/dashboard/page.tsx — if fetchPortfolio() fails, show WalletSummary in error state with message "Unable to load balance. Please try again." and a retry button. Do not block the rest of the dashboard (InvestmentSummary and AgentActions should still render from existing data).
+
+- [ ] T086 [P] Add no-wallet-setup state to dashboard in apps/web/src/app/dashboard/page.tsx — if OPENFORT_SMART_ACCOUNT_ADDRESS is not configured (portfolio endpoint returns appropriate signal), show a setup prompt instead of balance/portfolio cards.
+
+- [ ] T087 Run portfolio end-to-end validation — start all services (API on 3001, Web on 3000, Agent on 3002, Aave MCP on 8080). Walk through: dashboard → verify wallet balance shows real USDC balance → verify pool cards show aToken positions → click pool card → verify per-pool transaction history → verify total value = available + invested → verify zero-balance state shows funding prompt with copyable address → verify copied address matches OPENFORT_SMART_ACCOUNT_ADDRESS.
+
+---
+
+## Dependencies & Execution Order (Phase 3)
+
+### Phase Dependencies
+
+- **Portfolio Backend (Phase 14)**: Depends on Phase 1-13 being complete ✅ — start immediately
+- **US8 Wallet Balance (Phase 15)**: Depends on Phase 14 (needs fetchPortfolio API)
+- **US9 Pool Positions (Phase 16)**: Depends on Phase 14 (needs fetchPortfolio API). Can run in parallel with US8.
+- **Portfolio Polish (Phase 17)**: Depends on Phase 15 + 16
+
+### User Story Dependencies
+
+- **US8 (Wallet Balance)**: Depends on T078 (frontend API client). No dependency on US9.
+- **US9 (Pool Positions)**: Depends on T078 (frontend API client). No dependency on US8.
+- **US8 + US9 can run in parallel** after Phase 14 completes.
+
+### Within Portfolio Phases
+
+- T075 (viem dep) before T076 (use case)
+- T076 (use case) before T077 (endpoint)
+- T077 (endpoint) before T078 (frontend client)
+- T078 before any frontend component work (T079-T084)
+- T082 + T083 are parallel (different component files)
+- T079 before T080 (zero-balance extends WalletSummary)
+- T081 + T084 should be sequential (both modify dashboard/page.tsx)
+
+### Parallel Opportunities
+
+- T082 + T083: PoolTransactions and PortfolioSection in parallel (different files)
+- T079 + T082 + T083: WalletSummary, PoolTransactions, PortfolioSection all in parallel (different files, all depend only on T078)
+- T085 + T086: Both polish tasks in parallel (different concerns)
+- US8 + US9: Entire user stories can run in parallel after Phase 14
+
+---
+
+## Parallel Example: Portfolio Frontend
+
+```bash
+# After T078 (frontend API client) completes, launch all three components in parallel:
+Task T079: "WalletSummary component"
+Task T082: "PoolTransactions component"
+Task T083: "PortfolioSection component"
+
+# Then integrate sequentially (both touch dashboard/page.tsx):
+Task T081: "Integrate WalletSummary into dashboard"
+Task T084: "Integrate PortfolioSection into dashboard"
+```
+
+---
+
+## Implementation Strategy (Phase 3)
+
+### MVP First (US8 Wallet Balance Only)
+
+1. Complete Phase 14: Portfolio Backend API (T075-T078)
+2. Complete Phase 15: US8 Wallet Balance Card (T079-T081)
+3. **STOP and VALIDATE**: Dashboard shows wallet balance with real on-chain data
+4. Demo: "User sees their money in the dashboard"
+
+### Full Delivery
+
+1. Portfolio Backend → API endpoint returns balances + pool data
+2. US8 Wallet Balance → Available/invested/total visible → Demo checkpoint
+3. US9 Pool Positions → Pool cards with tx history → Demo checkpoint
+4. Polish → Error handling, validation → Final demo

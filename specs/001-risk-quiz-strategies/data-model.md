@@ -219,3 +219,84 @@ Three pre-defined strategies MUST be seeded on first run:
    Rebalance threshold: 1%. Chains: [Ethereum, Base, Polygon].
 
 Five quiz questions MUST be seeded (see spec FR-001).
+
+---
+
+## Phase 3: Portfolio Response Types (computed, not persisted)
+
+### PortfolioResponse
+
+Returned by `GET /api/investments/portfolio?userId=...`. Computed at query time from AgentAction records + on-chain aToken balances.
+
+```typescript
+interface PortfolioResponse {
+  investmentId: string;
+  strategyName: string;
+  riskLevel: string;
+  totalValueUsd: number;       // Sum of on-chain pool balances
+  totalInvestedUsd: number;    // Sum of net invested (supply - withdraw)
+  totalEarnedUsd: number;      // totalValue - totalInvested
+  pools: PoolPosition[];
+}
+```
+
+### PoolPosition
+
+One entry per unique (chain, protocol, asset) combination with executed actions.
+
+```typescript
+interface PoolPosition {
+  pool: {
+    chain: string;             // "Base Sepolia"
+    protocol: string;          // "Aave V3"
+    asset: string;             // "USDC"
+  };
+  onChainBalanceUsd: number;   // Current aToken balance
+  totalSuppliedUsd: number;    // Sum of executed supply amounts
+  totalWithdrawnUsd: number;   // Sum of executed withdraw amounts
+  netInvestedUsd: number;      // totalSupplied - totalWithdrawn
+  earnedYieldUsd: number;      // onChainBalance - netInvested
+  latestApyPercent: number | null;
+  allocationPercent: number;   // From strategy definition
+  actions: PoolAction[];       // Tx history for this pool
+}
+```
+
+### PoolAction
+
+Subset of AgentAction for display in per-pool transaction history.
+
+```typescript
+interface PoolAction {
+  id: string;
+  actionType: string;
+  amountUsd: number;
+  expectedApyAfter: number | null;
+  status: string;
+  txHash: string | null;
+  rationale: string;
+  executedAt: string;          // ISO timestamp
+}
+```
+
+### Computation Logic
+
+```
+For each unique (chain, protocol, asset) in AgentAction records:
+  1. totalSupplied = SUM(amount) WHERE actionType='supply' AND status='executed'
+  2. totalWithdrawn = SUM(amount) WHERE actionType='withdraw' AND status='executed'
+  3. netInvested = totalSupplied - totalWithdrawn
+  4. onChainBalance = readContract(aTokenAddress, 'balanceOf', [smartAccount]) / 1e6
+  5. earnedYield = onChainBalance - netInvested
+  6. latestApy = most recent action with non-null expectedApyAfter
+  7. actions = all AgentAction records for this pool, ordered by executedAt DESC
+```
+
+### aToken Lookup Map
+
+```typescript
+const ATOKEN_MAP: Record<string, `0x${string}`> = {
+  '84532:0x036cbd53842c5426634e7929541ec2318f3dcf7e': '0xf53B60F4006cab2b3C4688ce41fD5362427A2A66',
+};
+// Key: ${chainId}:${underlyingAssetAddress.toLowerCase()}
+```

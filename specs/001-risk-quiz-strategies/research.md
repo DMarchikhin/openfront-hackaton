@@ -241,3 +241,62 @@ chain. Tairon-ai/aave-mcp supports Base natively.
 - Ethereum Sepolia: Higher gas costs even on testnet
 - Multi-chain: Too complex for hackathon
 - Base Sepolia (chosen): Cheapest, fastest, Aave V3 available
+
+---
+
+## Phase 3 Research (Portfolio Dashboard)
+
+### R16: Reading On-Chain aToken Balances
+
+**Decision**: Use viem `readContract` with standard ERC-20 `balanceOf` on the aToken address, called from the NestJS API.
+
+**Rationale**: aTokens are standard ERC-20 tokens. Their balance reflects the real-time position including accrued interest (rebasing). A simple `balanceOf` call returns the current value. No need for complex Aave data provider calls. Reading in the API (not the agent) avoids spawning Claude SDK query() for a simple RPC read.
+
+**Alternatives considered**:
+- Aave UI Pool Data Provider `getUserReserveData()` — more data but requires knowing the data provider address and complex ABI. Overkill for USDC-only.
+- Calling Aave MCP `get_balance` tool — adds unnecessary network hop through agent.
+- Subgraph/indexer — adds infrastructure dependency.
+- Agent-side portfolio query — wasteful of API credits, 5-10s latency for one balance read.
+
+**Key finding**: The aUSDC address for Base Sepolia Aave V3 Pool (`0x07eA79F68B2B3df564D0A34F8e19D9B1e339814b`) is `0xf53B60F4006cab2b3C4688ce41fD5362427A2A66`. Confirmed via tx logs from supply tx `0x96540603...`.
+
+### R17: Portfolio Data Computation
+
+**Decision**: Compute portfolio positions from existing `AgentAction` records + on-chain aToken balance. No new database tables.
+
+**Rationale**: The `agent_action` table already stores every supply/withdraw/rate_check action with pool details, amount, APY, txHash. By aggregating executed actions per pool, we get net invested. Difference between on-chain aToken balance and net invested = earned yield.
+
+**Formula**:
+```
+totalSupplied = SUM(amount) WHERE actionType='supply' AND status='executed'
+totalWithdrawn = SUM(amount) WHERE actionType='withdraw' AND status='executed'
+netInvested = totalSupplied - totalWithdrawn
+onChainBalance = aToken.balanceOf(smartAccount) / 1e6
+earnedYield = onChainBalance - netInvested
+```
+
+**Alternatives considered**:
+- Snapshot table (periodic balance recording) — adds complexity. On-chain read is always fresh.
+- Separate yield entity — premature; yield is derived from balance delta.
+
+### R18: aToken Address Discovery
+
+**Decision**: Hardcode known aToken addresses for supported pools in a lookup map.
+
+**Rationale**: Single pool (Aave V3 USDC on Base Sepolia). Address is fixed. Map is easily extended later.
+
+**Map**: `{ '84532:0x036cbd53842c5426634e7929541ec2318f3dcf7e': '0xf53B60F4006cab2b3C4688ce41fD5362427A2A66' }`
+
+**Alternatives considered**:
+- On-chain `getReserveData(asset)` — extra RPC call, not needed for single known asset.
+- Aave address book npm — often outdated for testnets.
+
+### R19: Frontend Portfolio Architecture
+
+**Decision**: Two new components on the existing dashboard page. No new routes.
+
+**Rationale**: Portfolio is contextual to the active investment. Two components: `PortfolioSection` (pool cards with balances) and `PoolTransactions` (expandable per-pool tx history). Existing `InvestmentSummary` and `AgentActions` remain.
+
+**Alternatives considered**:
+- Separate `/portfolio` route — fragments post-investment experience.
+- Replacing `AgentActions` — loses full chronological timeline.
