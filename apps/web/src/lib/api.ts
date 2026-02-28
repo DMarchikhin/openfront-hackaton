@@ -190,3 +190,37 @@ export interface PortfolioResponse {
 
 export const fetchPortfolio = (userId: string) =>
   request<PortfolioResponse>(`/investments/portfolio?userId=${userId}`);
+
+// --- Agent streaming types + chat ---
+
+export const AGENT_URL = process.env.NEXT_PUBLIC_AGENT_URL ?? 'http://localhost:3002';
+
+export type ChatMessage =
+  | { id: string; type: 'thinking'; text: string; timestamp: number }
+  | { id: string; type: 'text'; text: string; timestamp: number }
+  | { id: string; type: 'tool_start'; tool: string; timestamp: number }
+  | { id: string; type: 'tool_progress'; tool: string; elapsed: number; timestamp: number }
+  | { id: string; type: 'tool_result'; tool: string; summary: string; timestamp: number }
+  | { id: string; type: 'status'; description: string; timestamp: number }
+  | { id: string; type: 'result'; text: string; duration?: number; turns?: number; timestamp: number }
+  | { id: string; type: 'error'; message: string; timestamp: number }
+  | { id: string; type: 'user'; text: string; timestamp: number };
+
+export interface SendAgentMessageContext {
+  strategyName: string;
+  strategyId: string;
+  riskLevel: string;
+  walletAddress: string;
+}
+
+export const sendAgentMessage = (
+  investmentId: string,
+  userId: string,
+  message: string,
+  context: SendAgentMessageContext,
+): Promise<{ status: string; investmentId: string }> =>
+  fetch(`${AGENT_URL}/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ investmentId, userId, message, context }),
+  }).then((r) => r.json());

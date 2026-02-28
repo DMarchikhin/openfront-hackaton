@@ -6,14 +6,16 @@ import {
   fetchActiveInvestment,
   fetchAgentActions,
   fetchPortfolio,
+  sendAgentMessage,
   ActiveInvestment,
   AgentAction,
   PortfolioResponse,
 } from '@/lib/api';
 import { InvestmentSummary } from '@/components/dashboard/InvestmentSummary';
-import { AgentActions } from '@/components/dashboard/AgentActions';
+import { AgentChat } from '@/components/dashboard/AgentChat';
 import { WalletSummary } from '@/components/dashboard/WalletSummary';
 import { PortfolioSection } from '@/components/dashboard/PortfolioSection';
+import { YieldProjection } from '@/components/dashboard/YieldProjection';
 
 function getUserId(): string {
   if (typeof window === 'undefined') return 'user-ssr';
@@ -31,6 +33,7 @@ export default function DashboardPage() {
   const [portfolio, setPortfolio] = useState<PortfolioResponse | null>(null);
   const [portfolioError, setPortfolioError] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [userId] = useState(() => getUserId());
 
   const loadPortfolio = useCallback((userId: string) => {
     setPortfolioError(false);
@@ -40,8 +43,6 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
-    const userId = getUserId();
-
     const portfolioPromise = loadPortfolio(userId);
 
     const investmentPromise = fetchActiveInvestment(userId)
@@ -56,7 +57,7 @@ export default function DashboardPage() {
       .catch(() => setInvestment(null));
 
     Promise.all([portfolioPromise, investmentPromise]).finally(() => setLoading(false));
-  }, [loadPortfolio]);
+  }, [loadPortfolio, userId]);
 
   // Poll agent actions every 3s while agent is processing
   useEffect(() => {
@@ -86,13 +87,23 @@ export default function DashboardPage() {
   }, [investment, actions]);
 
   const handleRetryPortfolio = useCallback(() => {
-    loadPortfolio(getUserId());
-  }, [loadPortfolio]);
+    loadPortfolio(userId);
+  }, [loadPortfolio, userId]);
 
   const smartAccountAddress =
     portfolio?.smartAccountAddress ??
     process.env.NEXT_PUBLIC_SMART_ACCOUNT_ADDRESS ??
     '';
+
+  const handleSendMessage = useCallback((message: string) => {
+    if (!investment) return;
+    sendAgentMessage(investment.investmentId, userId, message, {
+      strategyName: investment.strategy.name,
+      strategyId: investment.strategy.id,
+      riskLevel: investment.strategy.riskLevel,
+      walletAddress: smartAccountAddress,
+    }).catch(() => {});
+  }, [investment, userId, smartAccountAddress]);
 
   // T086: no-wallet-setup — address is unknown and portfolio errored (or never loaded)
   const walletNotConfigured = !smartAccountAddress && (portfolioError || (!loading && portfolio === null));
@@ -169,7 +180,21 @@ export default function DashboardPage() {
       <WalletSummary {...walletSummaryProps} />
       <InvestmentSummary investment={investment} />
       {portfolio && <PortfolioSection pools={portfolio.pools} />}
-      <AgentActions actions={actions} isProcessing={actions.length === 0 || actions.every((a) => a.status === 'pending')} />
+      {portfolio && portfolio.investedBalanceUsd > 0 && (() => {
+        // Weighted-average APY from pool positions, fallback to strategy expectedApyMin
+        const pools = portfolio.pools.filter((p) => p.latestApyPercent != null);
+        const weightedApy = pools.length > 0
+          ? pools.reduce((sum, p) => sum + (p.latestApyPercent ?? 0) * (p.allocationPercent / 100), 0)
+          : investment.strategy.expectedApyMin;
+        return <YieldProjection investedAmount={portfolio.investedBalanceUsd} apyPercent={weightedApy} />;
+      })()}
+      <AgentChat
+        investmentId={investment.investmentId}
+        actions={actions}
+        isProcessing={actions.length === 0 || actions.every((a) => a.status === 'pending')}
+        onSendMessage={handleSendMessage}
+        investment={investment}
+      />
     </div>
   );
 }

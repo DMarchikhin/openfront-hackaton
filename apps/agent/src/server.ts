@@ -2,7 +2,11 @@ import 'dotenv/config';
 // Allow claude CLI to spawn as a child process even when started from within a Claude Code session
 delete process.env.CLAUDECODE;
 import http from 'http';
+import { query } from '@anthropic-ai/claude-agent-sdk';
 import { executeInvestment, rebalanceInvestment, ExecuteInvestmentParams, RebalanceParams, StreamEvent } from './index.js';
+import { buildChatPrompt, chatToolsAllowList } from './chat-prompt.js';
+import { createAaveMcpServer } from './mcp/aave-tools.js';
+import { createOpenfortMcpServer } from './mcp/openfort-tools.js';
 
 const PORT = parseInt(process.env.AGENT_PORT ?? '3002', 10);
 const CORS_ORIGIN = process.env.CORS_ORIGIN ?? 'http://localhost:3000';
@@ -210,12 +214,84 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (method === 'POST' && url === '/chat') {
+    const body = (await readBody(req)) as {
+      investmentId: string;
+      userId: string;
+      message: string;
+      context: { strategyName: string; strategyId: string; riskLevel: string; walletAddress: string };
+    };
+    const { investmentId, message, context } = body;
+    console.log(`[agent] chat investmentId=${investmentId} message="${message.slice(0, 60)}"`);
+    send(res, 202, { status: 'accepted', investmentId });
+
+    const chainId = parseInt(process.env.CHAIN_ID ?? '84532', 10);
+    const prompt = buildChatPrompt({ message, chainId, ...context });
+    const onMessage = (event: StreamEvent) => {
+      broadcastEvent(investmentId, event.type, event as unknown as Record<string, unknown>);
+    };
+
+    // Run conversational agent in background (read-only, maxTurns: 5)
+    (async () => {
+      try {
+        const agentQuery = query({
+          prompt,
+          options: {
+            mcpServers: { aave: createAaveMcpServer(), openfort: createOpenfortMcpServer() },
+            allowedTools: chatToolsAllowList,
+            permissionMode: 'bypassPermissions',
+            allowDangerouslySkipPermissions: true,
+            maxTurns: 5,
+            model: 'claude-sonnet-4-6',
+          },
+        });
+        for await (const msg of agentQuery) {
+          // Re-use the same handleSdkMessage logic via broadcastEvent
+          if (msg.type === 'stream_event') {
+            const ev = (msg as unknown as { event: { type: string; delta?: { type: string; text: string } } }).event;
+            if (ev?.type === 'content_block_delta' && ev.delta?.type === 'text_delta') {
+              broadcastEvent(investmentId, 'text', { text: ev.delta.text });
+            }
+          } else if (msg.type === 'assistant') {
+            const content = (msg as unknown as { message: { content: Array<{ type: string; text?: string; thinking?: string }> } }).message?.content ?? [];
+            for (const block of content) {
+              if (block.type === 'text' && block.text) {
+                broadcastEvent(investmentId, 'thinking', { text: block.text });
+              } else if (block.type === 'thinking' && block.thinking) {
+                broadcastEvent(investmentId, 'thinking', { text: block.thinking });
+              }
+            }
+          } else if (msg.type === 'tool_progress') {
+            const m = msg as unknown as { elapsed_time_seconds?: number; tool_name?: string };
+            if (m.elapsed_time_seconds != null) {
+              broadcastEvent(investmentId, 'tool_progress', { tool: m.tool_name ?? 'tool', elapsed: m.elapsed_time_seconds });
+            } else {
+              broadcastEvent(investmentId, 'tool_start', { tool: m.tool_name ?? 'tool' });
+            }
+          } else if (msg.type === 'tool_use_summary') {
+            const m = msg as unknown as { tool_name?: string; summary?: string };
+            broadcastEvent(investmentId, 'tool_result', { tool: m.tool_name ?? 'tool', summary: m.summary ?? '' });
+          } else if (msg.type === 'result') {
+            const m = msg as unknown as { subtype: string; result?: string; error?: string };
+            if (m.subtype === 'success') {
+              broadcastEvent(investmentId, 'result', { text: m.result ?? '' });
+            }
+          }
+        }
+      } catch (err) {
+        broadcastEvent(investmentId, 'error', { message: (err as Error).message });
+      }
+      broadcastEvent(investmentId, 'done', {});
+    })();
+    return;
+  }
+
   return send(res, 404, { error: 'Not found' });
 });
 
 server.listen(PORT, () => {
   console.log(`[agent] HTTP server listening on http://localhost:${PORT}`);
-  console.log(`[agent] Endpoints: POST /execute  POST /rebalance  GET /stream/:id  GET /health`);
+  console.log(`[agent] Endpoints: POST /execute  POST /rebalance  POST /chat  GET /stream/:id  GET /health`);
   if (!process.env.ANTHROPIC_API_KEY) {
     console.error('[agent] ERROR: ANTHROPIC_API_KEY is not set');
     process.exit(1);
