@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { AgentAction, ActiveInvestment, ChatMessage } from '@/lib/api';
 import { AgentActions } from './AgentActions';
 import { Button } from '@/components/ui/button';
@@ -14,6 +15,7 @@ const QUICK_ACTIONS = ['Check my APY', 'Gas prices', "What's my balance?", 'Expl
 function Md({ children }: { children: string }) {
   return (
     <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
       components={{
         p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
         strong: ({ children }) => <strong className="font-semibold">{children}</strong>,

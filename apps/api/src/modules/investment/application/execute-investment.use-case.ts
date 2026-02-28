@@ -4,6 +4,7 @@ import { AgentActionRepositoryPort } from '../domain/ports/agent-action.reposito
 import { InvestmentRepositoryPort } from '../domain/ports/investment.repository.port';
 import { StrategyRepositoryPort } from '../../strategy/domain/ports/strategy.repository.port';
 import { AgentActionType, AgentActionStatus } from '../../../shared/enums';
+import { normalizeChain } from './get-portfolio.use-case';
 
 @Injectable()
 export class ExecuteInvestmentUseCase {
@@ -180,7 +181,7 @@ export class ExecuteInvestmentUseCase {
         userId,
         actionType: (a.actionType as AgentActionType) ?? AgentActionType.SUPPLY,
         strategyId,
-        chain: a.pool?.chain ?? 'base',
+        chain: normalizeChain(a.pool?.chain ?? 'base'),
         protocol: a.pool?.protocol ?? 'Aave v3',
         asset: a.pool?.asset ?? 'USDC',
         amount: String(a.amountUsd ?? 0),

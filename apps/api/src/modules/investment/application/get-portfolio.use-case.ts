@@ -7,6 +7,15 @@ import { StrategyRepositoryPort } from '../../strategy/domain/ports/strategy.rep
 import { AgentAction } from '../domain/agent-action.entity';
 import { AgentActionStatus, AgentActionType } from '../../../shared/enums';
 
+export function normalizeChain(chain: string): string {
+  const lower = chain.toLowerCase().trim();
+  if (lower.includes('base') && (lower.includes('sepolia') || lower.includes('84532'))) return 'base-sepolia';
+  if (lower.startsWith('base')) return 'base';
+  if (lower.includes('ethereum') || lower.includes('eth')) return 'ethereum';
+  if (lower.includes('polygon') || lower.includes('matic')) return 'polygon';
+  return lower.replace(/\s+/g, '-');
+}
+
 const USDC_ADDRESS = '0x036CbD53842c5426634e7929541eC2318f3dCF7e' as const;
 const AUSDC_ADDRESS = '0xf53B60F4006cab2b3C4688ce41fD5362427A2A66' as const;
 const ERC20_ABI = parseAbi(['function balanceOf(address) view returns (uint256)']);
@@ -96,7 +105,7 @@ export class GetPortfolioUseCase {
     // Group actions by (chain, protocol, asset)
     const poolMap = new Map<string, AgentAction[]>();
     for (const action of allActions) {
-      const key = `${action.chain}|${action.protocol}|${action.asset}`;
+      const key = `${normalizeChain(action.chain)}|${action.protocol}|${action.asset}`;
       if (!poolMap.has(key)) poolMap.set(key, []);
       poolMap.get(key)!.push(action);
     }
