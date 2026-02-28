@@ -25,9 +25,9 @@
 
 **Purpose**: Monorepo initialization with pnpm workspaces, NestJS backend, Next.js frontend
 
-- [ ] T001 Create monorepo root: pnpm-workspace.yaml defining `apps/*` workspaces, root package.json with `concurrently` devDependency and `"dev": "concurrently \"pnpm --filter api dev\" \"pnpm --filter web dev\""` script, root tsconfig.json with shared compiler options
-- [ ] T002 [P] Initialize NestJS app in apps/api/ — scaffold with @nestjs/cli, install @mikro-orm/core @mikro-orm/nestjs @mikro-orm/postgresql @mikro-orm/migrations uuid, configure tsconfig.json (emitDecoratorMetadata, experimentalDecorators), configure Jest in package.json, create .env.example with DATABASE_URL=postgresql://postgres:postgres@localhost:5432/openfort and PORT=3001
-- [ ] T003 [P] Initialize Next.js 15 app in apps/web/ with App Router, TypeScript, and Tailwind CSS — run create-next-app with --app --tailwind --typescript flags, set dev port to 3000, verify tailwind.config.ts content paths include ./src/**/*.tsx
+- [x] T001 Create monorepo root: pnpm-workspace.yaml defining `apps/*` workspaces, root package.json with `concurrently` devDependency and `"dev": "concurrently \"pnpm --filter api dev\" \"pnpm --filter web dev\""` script, root tsconfig.json with shared compiler options
+- [x] T002 [P] Initialize NestJS app in apps/api/ — scaffold with @nestjs/cli, install @mikro-orm/core @mikro-orm/nestjs @mikro-orm/postgresql @mikro-orm/migrations uuid, configure tsconfig.json (emitDecoratorMetadata, experimentalDecorators), configure Jest in package.json, create .env.example with DATABASE_URL=postgresql://postgres:postgres@localhost:5432/openfort and PORT=3001
+- [x] T003 [P] Initialize Next.js 15 app in apps/web/ with App Router, TypeScript, and Tailwind CSS — run create-next-app with --app --tailwind --typescript flags, set dev port to 3000, verify tailwind.config.ts content paths include ./src/**/*.tsx
 
 ---
 
