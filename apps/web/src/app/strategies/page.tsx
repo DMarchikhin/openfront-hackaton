@@ -1,12 +1,23 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
-import { fetchStrategies, Strategy } from '@/lib/api';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { fetchStrategies, fetchActiveInvestment, startInvesting, Strategy } from '@/lib/api';
 import { StrategyCard } from '@/components/strategy/StrategyCard';
 import { StrategyDetail } from '@/components/strategy/StrategyDetail';
 
+function getUserId(): string {
+  if (typeof window === 'undefined') return 'user-ssr';
+  let id = localStorage.getItem('userId');
+  if (!id) {
+    id = crypto.randomUUID();
+    localStorage.setItem('userId', id);
+  }
+  return id;
+}
+
 export default function StrategiesPage() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const riskLevel = searchParams.get('riskLevel') ?? undefined;
 
@@ -14,22 +25,38 @@ export default function StrategiesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [hasActiveInvestment, setHasActiveInvestment] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
 
   useEffect(() => {
-    fetchStrategies()
-      .then((data) => {
-        setStrategies(data.strategies);
-        // Auto-select the recommended one if riskLevel is in URL
-        if (riskLevel) {
-          const match = data.strategies.find((s) => s.riskLevel === riskLevel);
-          if (match) setSelectedId(match.id);
-        }
-      })
-      .catch(() => setError('Could not load strategies. Please try again.'))
+    const userId = getUserId();
+    Promise.all([
+      fetchStrategies(),
+      fetchActiveInvestment(userId).catch(() => null),
+    ]).then(([strategiesData, activeInvestment]) => {
+      setStrategies(strategiesData.strategies);
+      setHasActiveInvestment(!!activeInvestment);
+      if (riskLevel) {
+        const match = strategiesData.strategies.find((s) => s.riskLevel === riskLevel);
+        if (match) setSelectedId(match.id);
+      }
+    }).catch(() => setError('Could not load strategies. Please try again.'))
       .finally(() => setLoading(false));
   }, [riskLevel]);
 
   const selected = strategies.find((s) => s.id === selectedId) ?? null;
+
+  async function handleStartInvesting() {
+    if (!selected) return;
+    setActionLoading(true);
+    try {
+      await startInvesting({ userId: getUserId(), strategyId: selected.id });
+      router.push('/dashboard');
+    } catch {
+      setError('Could not start investing. Please try again.');
+      setActionLoading(false);
+    }
+  }
 
   if (loading) {
     return (
@@ -69,7 +96,12 @@ export default function StrategiesPage() {
             />
             {selectedId === strategy.id && selected && (
               <div className="mt-2">
-                <StrategyDetail strategy={selected} />
+                <StrategyDetail
+                  strategy={selected}
+                  hasActiveInvestment={hasActiveInvestment}
+                  onStartInvesting={handleStartInvesting}
+                  actionLoading={actionLoading}
+                />
               </div>
             )}
           </div>
