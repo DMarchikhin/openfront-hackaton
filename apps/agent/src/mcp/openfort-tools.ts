@@ -1,4 +1,5 @@
 import Openfort from '@openfort/openfort-node';
+import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 
 let _openfort: Openfort | null = null;
@@ -12,110 +13,111 @@ function getOpenfort(): Openfort {
   return _openfort;
 }
 
-export const openfortToolDefinitions = [
-  {
-    name: 'openfort_create_transaction',
-    description: 'Create and submit a blockchain transaction intent via Openfort. Use this to supply funds to Aave or execute other DeFi operations.',
-    inputSchema: z.object({
-      chainId: z.number().describe('The chain ID (e.g., 84532 for Base Sepolia)'),
-      contractAddress: z.string().describe('The target smart contract address'),
-      functionName: z.string().describe('The contract function to call (e.g., "supply")'),
-      functionArgs: z.array(z.string()).describe('Encoded function arguments'),
-      policyId: z.string().optional().describe('Openfort gas sponsorship policy ID'),
-      accountAddress: z.string().describe('The user wallet/account address to execute from'),
-    }),
-    async handler(input: {
-      chainId: number;
-      contractAddress: string;
-      functionName: string;
-      functionArgs: string[];
-      policyId?: string;
-      accountAddress: string;
-    }): Promise<{ txHash: string | null; id: string; status: string }> {
-      const openfort = getOpenfort();
-      const intent = await openfort.transactionIntents.create({
-        chainId: input.chainId,
-        interactions: [
-          {
-            contract: input.contractAddress,
-            functionName: input.functionName,
-            functionArgs: input.functionArgs,
-          },
-        ],
-        policy: input.policyId,
-        account: input.accountAddress,
-        optimistic: false,
-      });
-      return {
-        id: intent.id,
-        status: String(intent.response?.status ?? 'pending'),
-        txHash: intent.response?.transactionHash ?? null,
-      };
-    },
-  },
+function textResult(data: unknown) {
+  return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
+}
 
-  {
-    name: 'openfort_get_balance',
-    description: 'Get token balances for an Openfort account address on a specific chain.',
-    inputSchema: z.object({
-      accountAddress: z.string().describe('The account address to check'),
-      chainId: z.number().describe('The chain ID'),
-    }),
-    async handler(input: {
-      accountAddress: string;
-      chainId: number;
-    }): Promise<{ balances: Array<{ asset: string; amount: string; usdValue?: number }> }> {
-      const openfort = getOpenfort();
-      const accounts = await openfort.accounts.list({ limit: 1 });
-      const hasAccount = accounts.data && accounts.data.length > 0;
-      return {
-        balances: [
-          {
-            asset: 'ETH',
-            amount: hasAccount ? '0' : '0',
-            usdValue: 0,
-          },
-        ],
-      };
-    },
-  },
+export function createOpenfortMcpServer() {
+  return createSdkMcpServer({
+    name: 'openfort',
+    version: '1.0.0',
+    tools: [
+      tool(
+        'openfort_create_transaction',
+        'Create and submit a blockchain transaction intent via Openfort. Use this to supply funds to Aave or execute other DeFi operations.',
+        {
+          chainId: z.number().describe('The chain ID (e.g., 84532 for Base Sepolia)'),
+          contractAddress: z.string().describe('The target smart contract address'),
+          functionName: z.string().describe('The contract function to call (e.g., "supply")'),
+          functionArgs: z.array(z.string()).describe('Encoded function arguments'),
+          policyId: z.string().optional().describe('Openfort gas sponsorship policy ID'),
+          accountAddress: z.string().describe('The user wallet/account address to execute from'),
+        },
+        async (input) => {
+          try {
+            const openfort = getOpenfort();
+            const intent = await openfort.transactionIntents.create({
+              chainId: input.chainId,
+              interactions: [
+                {
+                  contract: input.contractAddress,
+                  functionName: input.functionName,
+                  functionArgs: input.functionArgs,
+                },
+              ],
+              policy: input.policyId,
+              account: input.accountAddress,
+              optimistic: false,
+            });
+            return textResult({
+              id: intent.id,
+              status: String(intent.response?.status ?? 'pending'),
+              txHash: intent.response?.transactionHash ?? null,
+            });
+          } catch (err) {
+            return { content: [{ type: 'text' as const, text: `Error: ${(err as Error).message}` }], isError: true };
+          }
+        },
+      ),
 
-  {
-    name: 'openfort_simulate_transaction',
-    description: 'Simulate a transaction to estimate gas cost before executing it.',
-    inputSchema: z.object({
-      chainId: z.number().describe('The chain ID'),
-      contractAddress: z.string().describe('The target smart contract address'),
-      functionName: z.string().describe('The contract function to call'),
-      functionArgs: z.array(z.string()).describe('Encoded function arguments'),
-      accountAddress: z.string().describe('The account address'),
-    }),
-    async handler(input: {
-      chainId: number;
-      contractAddress: string;
-      functionName: string;
-      functionArgs: string[];
-      accountAddress: string;
-    }): Promise<{ estimatedGasUsd: number; canExecute: boolean }> {
-      const openfort = getOpenfort();
-      const intent = await openfort.transactionIntents.create({
-        chainId: input.chainId,
-        interactions: [
-          {
-            contract: input.contractAddress,
-            functionName: input.functionName,
-            functionArgs: input.functionArgs,
-          },
-        ],
-        account: input.accountAddress,
-        optimistic: true,
-      });
-      return {
-        estimatedGasUsd: 0.01,
-        canExecute: intent.id !== undefined,
-      };
-    },
-  },
-] as const;
+      tool(
+        'openfort_get_balance',
+        'Get token balances for an Openfort account address on a specific chain.',
+        {
+          accountAddress: z.string().describe('The account address to check'),
+          chainId: z.number().describe('The chain ID'),
+        },
+        async (input) => {
+          try {
+            const openfort = getOpenfort();
+            const accounts = await openfort.accounts.list({ limit: 10, chainId: input.chainId });
+            return textResult({
+              accountAddress: input.accountAddress,
+              chainId: input.chainId,
+              accountCount: accounts.data?.length ?? 0,
+              note: 'Use Aave MCP get_balance for on-chain token balances.',
+            });
+          } catch (err) {
+            return { content: [{ type: 'text' as const, text: `Error: ${(err as Error).message}` }], isError: true };
+          }
+        },
+      ),
 
-export type OpenfortToolName = (typeof openfortToolDefinitions)[number]['name'];
+      tool(
+        'openfort_simulate_transaction',
+        'Simulate a transaction to estimate gas cost before executing it.',
+        {
+          chainId: z.number().describe('The chain ID'),
+          contractAddress: z.string().describe('The target smart contract address'),
+          functionName: z.string().describe('The contract function to call'),
+          functionArgs: z.array(z.string()).describe('Encoded function arguments'),
+          accountAddress: z.string().describe('The account address'),
+        },
+        async (input) => {
+          try {
+            const openfort = getOpenfort();
+            const intent = await openfort.transactionIntents.create({
+              chainId: input.chainId,
+              interactions: [
+                {
+                  contract: input.contractAddress,
+                  functionName: input.functionName,
+                  functionArgs: input.functionArgs,
+                },
+              ],
+              account: input.accountAddress,
+              optimistic: true,
+            });
+            return textResult({
+              estimatedGasUsd: 0.01,
+              canExecute: intent.id !== undefined,
+              intentId: intent.id,
+            });
+          } catch (err) {
+            return { content: [{ type: 'text' as const, text: `Error: ${(err as Error).message}` }], isError: true };
+          }
+        },
+      ),
+    ],
+  });
+}

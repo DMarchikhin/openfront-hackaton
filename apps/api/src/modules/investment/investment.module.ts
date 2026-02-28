@@ -6,6 +6,7 @@ import { InvestmentRepository } from './infrastructure/investment.repository';
 import { AgentActionRepository } from './infrastructure/agent-action.repository';
 import { StartInvestingUseCase } from './application/start-investing.use-case';
 import { SwitchStrategyUseCase } from './application/switch-strategy.use-case';
+import { ExecuteInvestmentUseCase } from './application/execute-investment.use-case';
 import { InvestmentController } from './infrastructure/investment.controller';
 import { StrategyModule } from '../strategy/strategy.module';
 
@@ -23,6 +24,7 @@ import { StrategyModule } from '../strategy/strategy.module';
     },
     StartInvestingUseCase,
     SwitchStrategyUseCase,
+    ExecuteInvestmentUseCase,
   ],
 })
 export class InvestmentModule {}

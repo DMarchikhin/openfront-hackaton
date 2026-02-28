@@ -63,11 +63,40 @@ export interface ActiveInvestment {
   strategy: Strategy;
   status: 'active' | 'inactive';
   activatedAt: string;
+  agentMessage?: string;
+}
+
+export interface AgentAction {
+  id: string;
+  actionType: 'supply' | 'withdraw' | 'rebalance' | 'rate_check';
+  chain: string;
+  protocol: string;
+  asset: string;
+  amount: string;
+  gasCostUsd: number | null;
+  expectedApyBefore: number | null;
+  expectedApyAfter: number | null;
+  rationale: string;
+  status: 'pending' | 'executed' | 'failed' | 'skipped';
+  txHash: string | null;
+  executedAt: string;
+}
+
+export interface AgentActionsResponse {
+  investmentId: string;
+  actions: AgentAction[];
+}
+
+export interface ExecuteInvestmentResponse {
+  investmentId: string;
+  status: 'executing';
+  message: string;
 }
 
 export interface StartInvestingRequest {
   userId: string;
   strategyId: string;
+  userAmount: string;
 }
 
 export interface SwitchStrategyRequest {
@@ -108,3 +137,12 @@ export const switchStrategy = (body: SwitchStrategyRequest) =>
 
 export const fetchActiveInvestment = (userId: string) =>
   request<ActiveInvestment>(`/investments/active?userId=${userId}`);
+
+export const executeInvestment = (investmentId: string, userAmount: number) =>
+  request<ExecuteInvestmentResponse>('/investments/execute', {
+    method: 'POST',
+    body: JSON.stringify({ investmentId, userAmount: String(userAmount) }),
+  });
+
+export const fetchAgentActions = (investmentId: string) =>
+  request<AgentActionsResponse>(`/investments/${investmentId}/actions`);

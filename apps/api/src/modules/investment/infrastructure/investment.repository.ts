@@ -20,4 +20,8 @@ export class InvestmentRepository implements InvestmentRepositoryPort {
   async findActiveByUserId(userId: string): Promise<UserInvestment | null> {
     return this.repo.findOne({ userId, status: InvestmentStatus.ACTIVE });
   }
+
+  async findById(id: string): Promise<UserInvestment | null> {
+    return this.repo.findOne({ id });
+  }
 }

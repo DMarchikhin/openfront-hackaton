@@ -1,8 +1,10 @@
-import { Body, Controller, Get, HttpCode, Inject, NotFoundException, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Inject, NotFoundException, Param, Patch, Post, Query } from '@nestjs/common';
 import { IsNotEmpty, IsString, IsUUID } from 'class-validator';
 import { StartInvestingUseCase } from '../application/start-investing.use-case';
 import { SwitchStrategyUseCase } from '../application/switch-strategy.use-case';
+import { ExecuteInvestmentUseCase } from '../application/execute-investment.use-case';
 import { InvestmentRepositoryPort } from '../domain/ports/investment.repository.port';
+import { AgentActionRepositoryPort } from '../domain/ports/agent-action.repository.port';
 import { StrategyRepositoryPort } from '../../strategy/domain/ports/strategy.repository.port';
 
 class StartInvestingDto {
@@ -12,6 +14,10 @@ class StartInvestingDto {
 
   @IsUUID()
   strategyId: string;
+
+  @IsString()
+  @IsNotEmpty()
+  userAmount: string;
 }
 
 class SwitchStrategyDto {
@@ -23,13 +29,25 @@ class SwitchStrategyDto {
   newStrategyId: string;
 }
 
+class ExecuteInvestmentDto {
+  @IsUUID()
+  investmentId: string;
+
+  @IsString()
+  @IsNotEmpty()
+  userAmount: string;
+}
+
 @Controller('investments')
 export class InvestmentController {
   constructor(
     private readonly startInvestingUseCase: StartInvestingUseCase,
     private readonly switchStrategyUseCase: SwitchStrategyUseCase,
+    private readonly executeInvestmentUseCase: ExecuteInvestmentUseCase,
     @Inject('InvestmentRepositoryPort')
     private readonly investmentRepo: InvestmentRepositoryPort,
+    @Inject('AgentActionRepositoryPort')
+    private readonly agentActionRepo: AgentActionRepositoryPort,
     @Inject('StrategyRepositoryPort')
     private readonly strategyRepo: StrategyRepositoryPort,
   ) {}
@@ -37,7 +55,7 @@ export class InvestmentController {
   @Post('start')
   @HttpCode(201)
   async start(@Body() body: StartInvestingDto) {
-    return this.startInvestingUseCase.execute(body.userId, body.strategyId);
+    return this.startInvestingUseCase.execute(body.userId, body.strategyId, parseFloat(body.userAmount));
   }
 
   @Patch('switch')
@@ -72,6 +90,35 @@ export class InvestmentController {
       },
       status: investment.status,
       activatedAt: investment.activatedAt.toISOString(),
+    };
+  }
+
+  @Post('execute')
+  @HttpCode(202)
+  async execute(@Body() body: ExecuteInvestmentDto) {
+    return this.executeInvestmentUseCase.execute(body.investmentId, parseFloat(body.userAmount));
+  }
+
+  @Get(':investmentId/actions')
+  async getActions(@Param('investmentId') investmentId: string) {
+    const actions = await this.agentActionRepo.findByInvestmentId(investmentId);
+    return {
+      investmentId,
+      actions: actions.map((a) => ({
+        id: a.id,
+        actionType: a.actionType,
+        chain: a.chain,
+        protocol: a.protocol,
+        asset: a.asset,
+        amount: a.amount,
+        gasCostUsd: a.gasCostUsd,
+        expectedApyBefore: a.expectedApyBefore,
+        expectedApyAfter: a.expectedApyAfter,
+        rationale: a.rationale,
+        status: a.status,
+        txHash: a.txHash,
+        executedAt: a.executedAt.toISOString(),
+      })),
     };
   }
 }
