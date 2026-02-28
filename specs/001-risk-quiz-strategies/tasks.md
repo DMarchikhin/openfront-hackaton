@@ -542,12 +542,12 @@ Task T064: "Frontend API client for agent"
 
 ### Implementation for US9
 
-- [ ] T082 [P] [US9] Create PoolTransactions component in apps/web/src/components/dashboard/PoolTransactions.tsx — props: `{ actions: PoolAction[] }`. Renders a compact transaction timeline for a single pool:
+- [x] T082 [P] [US9] Create PoolTransactions component in apps/web/src/components/dashboard/PoolTransactions.tsx — props: `{ actions: PoolAction[] }`. Renders a compact transaction timeline for a single pool:
   - Each action shows: icon by actionType (supply ↗, withdraw ↙, rate_check ◎, rebalance ⇄), description ("Supply $10.00 USDC" or "Rate Check"), status badge (executed/failed/skipped), APY after action (if non-null), truncated txHash as link (if non-null), timestamp formatted as "Feb 28, 2:30 PM", rationale text in smaller font.
   - Sort by executedAt DESC (newest first).
   - Empty state: "No transactions for this pool yet."
 
-- [ ] T083 [P] [US9] Create PortfolioSection component in apps/web/src/components/dashboard/PortfolioSection.tsx — props: `{ pools: PoolPosition[] }`. Renders one card per pool:
+- [x] T083 [P] [US9] Create PortfolioSection component in apps/web/src/components/dashboard/PortfolioSection.tsx — props: `{ pools: PoolPosition[] }`. Renders one card per pool:
   - Pool header: "{asset} on {protocol} ({chain})" e.g. "USDC on Aave V3 (Base Sepolia)"
   - Metrics row: Current Balance (onChainBalanceUsd as $X.XX), Supplied (totalSuppliedUsd), Earned (earnedYieldUsd with green color if positive)
   - APY badge: latestApyPercent formatted as "X.X% APY"
@@ -555,7 +555,7 @@ Task T064: "Frontend API client for agent"
   - Expandable section: click card to toggle PoolTransactions component visibility for that pool's actions.
   - Use useState to track which pool is expanded (accordion pattern — one at a time).
 
-- [ ] T084 [US9] Integrate PortfolioSection into dashboard page at apps/web/src/app/dashboard/page.tsx — pass portfolio.pools to PortfolioSection. Render between WalletSummary and AgentActions. Show "Your Pools" section header. Show empty state "No pool positions yet" when pools array is empty. Ensure loading skeleton shows while fetchPortfolio is in flight.
+- [x] T084 [US9] Integrate PortfolioSection into dashboard page at apps/web/src/app/dashboard/page.tsx — pass portfolio.pools to PortfolioSection. Render between WalletSummary and AgentActions. Show "Your Pools" section header. Show empty state "No pool positions yet" when pools array is empty. Ensure loading skeleton shows while fetchPortfolio is in flight.
 
 **Checkpoint**: Dashboard shows pool cards with real on-chain balances and expandable per-pool transaction history.
 

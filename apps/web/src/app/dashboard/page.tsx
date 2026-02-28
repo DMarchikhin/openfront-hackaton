@@ -13,6 +13,7 @@ import {
 import { InvestmentSummary } from '@/components/dashboard/InvestmentSummary';
 import { AgentActions } from '@/components/dashboard/AgentActions';
 import { WalletSummary } from '@/components/dashboard/WalletSummary';
+import { PortfolioSection } from '@/components/dashboard/PortfolioSection';
 
 function getUserId(): string {
   if (typeof window === 'undefined') return 'user-ssr';
@@ -109,6 +110,7 @@ export default function DashboardPage() {
       </div>
       <WalletSummary {...walletSummaryProps} />
       <InvestmentSummary investment={investment} />
+      {portfolio && <PortfolioSection pools={portfolio.pools} />}
       <AgentActions actions={actions} />
     </div>
   );
