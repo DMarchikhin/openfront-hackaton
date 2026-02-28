@@ -149,11 +149,11 @@
 
 **Purpose**: UX refinement and validation across all stories
 
-- [ ] T044 [P] Add loading spinners on quiz page (while fetching questions), strategies page (while loading strategies), and dashboard page (while fetching active investment) in apps/web/src/app/quiz/page.tsx, apps/web/src/app/strategies/page.tsx, apps/web/src/app/dashboard/page.tsx
-- [ ] T045 [P] Add error handling on all API calls — show user-friendly error messages in plain English (no technical details) with retry buttons where applicable, in apps/web/src/lib/api.ts and each page component
-- [ ] T046 [P] Add input validation DTOs using class-validator (@IsUUID, @IsString, @IsArray, @IsNotEmpty) on QuizController submit body and InvestmentController start/switch bodies in apps/api/src/modules/*/infrastructure/*.controller.ts
-- [ ] T047 Polish Tailwind styling across all pages — consistent color palette (green for growth, blue for balanced, gray for conservative), clean card shadows, responsive layout on mobile viewports, smooth transitions between quiz questions
-- [ ] T048 Run quickstart.md validation — start fresh (pnpm install, docker DB, migration, seed, pnpm dev), walk through complete flow: home → quiz → result → strategies → start investing → dashboard → change strategy. Verify all checkpoints pass.
+- [x] T044 [P] Add loading spinners on quiz page (while fetching questions), strategies page (while loading strategies), and dashboard page (while fetching active investment) in apps/web/src/app/quiz/page.tsx, apps/web/src/app/strategies/page.tsx, apps/web/src/app/dashboard/page.tsx
+- [x] T045 [P] Add error handling on all API calls — show user-friendly error messages in plain English (no technical details) with retry buttons where applicable, in apps/web/src/lib/api.ts and each page component
+- [x] T046 [P] Add input validation DTOs using class-validator (@IsUUID, @IsString, @IsArray, @IsNotEmpty) on QuizController submit body and InvestmentController start/switch bodies in apps/api/src/modules/*/infrastructure/*.controller.ts
+- [x] T047 Polish Tailwind styling across all pages — consistent color palette (green for growth, blue for balanced, gray for conservative), clean card shadows, responsive layout on mobile viewports, smooth transitions between quiz questions
+- [x] T048 Run quickstart.md validation — start fresh (pnpm install, docker DB, migration, seed, pnpm dev), walk through complete flow: home → quiz → result → strategies → start investing → dashboard → change strategy. Verify all checkpoints pass.
 
 ---
 
