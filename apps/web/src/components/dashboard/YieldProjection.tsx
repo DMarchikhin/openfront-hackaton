@@ -1,5 +1,7 @@
 'use client';
 
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+
 interface YieldProjectionProps {
   investedAmount: number;
   apyPercent: number;
@@ -37,40 +39,43 @@ export function YieldProjection({ investedAmount, apyPercent }: YieldProjectionP
   const polyline = points.join(' ');
 
   return (
-    <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-semibold text-gray-700">Projected Earnings</h3>
-        <span className="text-xs text-gray-400">{apyPercent.toFixed(2)}% APY</span>
-      </div>
+    <Card>
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm font-semibold">Projected Earnings</CardTitle>
+          <span className="text-xs text-muted-foreground">{apyPercent.toFixed(2)}% APY</span>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {/* Sparkline */}
+        <div className="mb-3">
+          <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-8" preserveAspectRatio="none">
+            <polyline
+              points={polyline}
+              fill="none"
+              stroke="hsl(var(--primary))"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            {values.map((v, i) => {
+              const x = (i / (values.length - 1)) * W;
+              const y = H - (v / max) * H;
+              return <circle key={i} cx={x.toFixed(1)} cy={y.toFixed(1)} r="3" fill="hsl(var(--primary))" />;
+            })}
+          </svg>
+        </div>
 
-      {/* Sparkline */}
-      <div className="mb-3">
-        <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-8" preserveAspectRatio="none">
-          <polyline
-            points={polyline}
-            fill="none"
-            stroke="#16a34a"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-          {values.map((v, i) => {
-            const x = (i / (values.length - 1)) * W;
-            const y = H - (v / max) * H;
-            return <circle key={i} cx={x.toFixed(1)} cy={y.toFixed(1)} r="3" fill="#16a34a" />;
-          })}
-        </svg>
-      </div>
-
-      {/* Milestone columns */}
-      <div className="grid grid-cols-4 gap-2">
-        {MILESTONES.map(({ label, months }, i) => (
-          <div key={label} className="text-center">
-            <div className="text-xs text-green-700 font-semibold">{fmt(values[i] ?? calcYield(investedAmount, apyPercent, months))}</div>
-            <div className="text-xs text-gray-400 mt-0.5">{label}</div>
-          </div>
-        ))}
-      </div>
-    </div>
+        {/* Milestone columns */}
+        <div className="grid grid-cols-4 gap-2">
+          {MILESTONES.map(({ label, months }, i) => (
+            <div key={label} className="text-center">
+              <div className="text-xs font-semibold">{fmt(values[i] ?? calcYield(investedAmount, apyPercent, months))}</div>
+              <div className="text-xs text-muted-foreground mt-0.5">{label}</div>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
   );
 }

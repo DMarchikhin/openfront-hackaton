@@ -1,5 +1,7 @@
 import Link from 'next/link';
 import { ActiveInvestment } from '@/lib/api';
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 type RiskLevel = 'conservative' | 'balanced' | 'growth';
 
@@ -7,15 +9,22 @@ interface InvestmentSummaryProps {
   investment: ActiveInvestment;
 }
 
-const RISK_CONFIG: Record<RiskLevel, { badge: string; label: string }> = {
-  conservative: { badge: 'bg-sky-100 text-sky-700', label: 'Conservative' },
-  balanced: { badge: 'bg-green-100 text-green-700', label: 'Balanced' },
-  growth: { badge: 'bg-purple-100 text-purple-700', label: 'Growth' },
+const RISK_BADGE_CLASS: Record<RiskLevel, string> = {
+  conservative: 'bg-sky-100 text-sky-700 border-sky-200 hover:bg-sky-100',
+  balanced: 'bg-green-100 text-green-700 border-green-200 hover:bg-green-100',
+  growth: 'bg-purple-100 text-purple-700 border-purple-200 hover:bg-purple-100',
+};
+
+const RISK_LABEL: Record<RiskLevel, string> = {
+  conservative: 'Conservative',
+  balanced: 'Balanced',
+  growth: 'Growth',
 };
 
 export function InvestmentSummary({ investment }: InvestmentSummaryProps) {
   const { strategy } = investment;
-  const config = RISK_CONFIG[strategy.riskLevel as RiskLevel];
+  const badgeClass = RISK_BADGE_CLASS[strategy.riskLevel as RiskLevel];
+  const label = RISK_LABEL[strategy.riskLevel as RiskLevel];
   const activatedDate = new Date(investment.activatedAt).toLocaleDateString('en-US', {
     year: 'numeric',
     month: 'long',
@@ -25,76 +34,81 @@ export function InvestmentSummary({ investment }: InvestmentSummaryProps) {
 
   return (
     <div className="space-y-4">
-      <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
-        <div className="flex items-start justify-between">
-          <div>
-            <p className="text-sm text-gray-500 mb-1">Active strategy</p>
-            <h2 className="text-2xl font-bold text-gray-900">{strategy.name}</h2>
-          </div>
-          <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${config.badge}`}>
-            {config.label}
-          </span>
-        </div>
-
-        <div className="mt-4 grid grid-cols-3 gap-4">
-          <div className="bg-gray-50 rounded-lg p-3 text-center">
-            <p className="text-xs text-gray-500">Expected APY</p>
-            <p className="text-xl font-bold text-gray-900 mt-0.5">
-              {strategy.expectedApyMin}–{strategy.expectedApyMax}%
-            </p>
-          </div>
-          <div className="bg-gray-50 rounded-lg p-3 text-center">
-            <p className="text-xs text-gray-500">Est. daily on $1,000</p>
-            <p className="text-xl font-bold text-gray-900 mt-0.5">
-              ${((1000 * parseFloat(midApy)) / 100 / 365).toFixed(2)}
-            </p>
-          </div>
-          <div className="bg-gray-50 rounded-lg p-3 text-center">
-            <p className="text-xs text-gray-500">Status</p>
-            <p className="text-xl font-bold text-green-600 mt-0.5 capitalize">{investment.status}</p>
-          </div>
-        </div>
-
-        <p className="mt-4 text-xs text-gray-400">Activated on {activatedDate}</p>
-
-        {investment.agentMessage && (
-          <div className="mt-4 flex items-center gap-2 text-xs text-blue-600 bg-blue-50 rounded-lg px-3 py-2">
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
-            </span>
-            {investment.agentMessage}
-          </div>
-        )}
-      </div>
-
-      <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
-        <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
-          Where your money is working
-        </h3>
-        <div className="space-y-2">
-          {strategy.poolAllocations.map((p, i) => (
-            <div key={i}>
-              <div className="flex justify-between text-sm mb-1">
-                <span className="text-gray-700 capitalize">
-                  {p.protocol} · {p.chain}
-                </span>
-                <span className="font-semibold text-gray-900">{p.allocationPercentage}%</span>
-              </div>
-              <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-gray-800 rounded-full"
-                  style={{ width: `${p.allocationPercentage}%` }}
-                />
-              </div>
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm text-muted-foreground mb-1">Active strategy</p>
+              <CardTitle className="text-2xl">{strategy.name}</CardTitle>
             </div>
-          ))}
-        </div>
-      </div>
+            <Badge className={badgeClass}>{label}</Badge>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-3 gap-4">
+            <div className="bg-muted/50 rounded-lg p-3 text-center">
+              <p className="text-xs text-muted-foreground">Expected APY</p>
+              <p className="text-xl font-bold mt-0.5">
+                {strategy.expectedApyMin}–{strategy.expectedApyMax}%
+              </p>
+            </div>
+            <div className="bg-muted/50 rounded-lg p-3 text-center">
+              <p className="text-xs text-muted-foreground">Est. daily on $1,000</p>
+              <p className="text-xl font-bold mt-0.5">
+                ${((1000 * parseFloat(midApy)) / 100 / 365).toFixed(2)}
+              </p>
+            </div>
+            <div className="bg-muted/50 rounded-lg p-3 text-center">
+              <p className="text-xs text-muted-foreground">Status</p>
+              <p className="text-xl font-bold text-green-600 mt-0.5 capitalize">{investment.status}</p>
+            </div>
+          </div>
+
+          <p className="mt-4 text-xs text-muted-foreground">Activated on {activatedDate}</p>
+
+          {investment.agentMessage && (
+            <div className="mt-4 flex items-center gap-2 text-xs text-blue-600 bg-blue-50 rounded-lg px-3 py-2">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
+              </span>
+              {investment.agentMessage}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+            Where your money is working
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+            {strategy.poolAllocations.map((p, i) => (
+              <div key={i}>
+                <div className="flex justify-between text-sm mb-1">
+                  <span className="capitalize">
+                    {p.protocol} · {p.chain}
+                  </span>
+                  <span className="font-semibold">{p.allocationPercentage}%</span>
+                </div>
+                <div className="h-2 bg-secondary rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-primary rounded-full"
+                    style={{ width: `${p.allocationPercentage}%` }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
 
       <Link
         href={`/strategies?riskLevel=${strategy.riskLevel}`}
-        className="block text-center text-sm text-gray-500 hover:text-gray-700 transition-colors"
+        className="block text-center text-sm text-muted-foreground hover:text-foreground transition-colors"
       >
         Change strategy →
       </Link>

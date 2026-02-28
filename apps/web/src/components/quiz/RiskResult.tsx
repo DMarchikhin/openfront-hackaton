@@ -1,4 +1,6 @@
 import Link from 'next/link';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 
 type RiskLevel = 'conservative' | 'balanced' | 'growth';
 
@@ -9,20 +11,17 @@ interface RiskResultProps {
   maxPossibleScore: number;
 }
 
-const RISK_CONFIG: Record<RiskLevel, { label: string; badge: string; card: string }> = {
+const RISK_CONFIG: Record<RiskLevel, { label: string; card: string }> = {
   conservative: {
     label: 'Conservative',
-    badge: 'bg-sky-100 text-sky-700',
     card: 'bg-sky-50 border-sky-200',
   },
   balanced: {
     label: 'Balanced',
-    badge: 'bg-green-100 text-green-700',
     card: 'bg-green-50 border-green-200',
   },
   growth: {
     label: 'Growth',
-    badge: 'bg-purple-100 text-purple-700',
     card: 'bg-purple-50 border-purple-200',
   },
 };
@@ -34,31 +33,25 @@ export function RiskResult({ riskLevel, description, totalScore, maxPossibleScor
   return (
     <div className="w-full max-w-xl mx-auto space-y-6 text-center">
       <div>
-        <p className="text-sm font-medium text-gray-500 mb-2">Your investment personality</p>
+        <p className="text-sm text-muted-foreground mb-2">Your investment personality</p>
         <div className={`inline-block border rounded-2xl px-8 py-6 ${config.card}`}>
-          <span className={`text-xs font-semibold px-3 py-1 rounded-full ${config.badge}`}>
-            {config.label}
-          </span>
-          <p className="mt-3 text-4xl font-bold text-gray-900">{percentage}%</p>
-          <p className="mt-1 text-sm text-gray-500">risk score</p>
+          <Badge variant="secondary">{config.label}</Badge>
+          <p className="mt-3 text-4xl font-bold">{percentage}%</p>
+          <p className="mt-1 text-sm text-muted-foreground">risk score</p>
         </div>
       </div>
 
-      <p className="text-gray-600 text-base leading-relaxed">{description}</p>
+      <p className="text-muted-foreground text-base leading-relaxed">{description}</p>
 
       <div className="flex flex-col sm:flex-row gap-3 justify-center">
-        <Link
-          href={`/strategies?riskLevel=${riskLevel}`}
-          className="px-8 py-3 bg-gray-900 text-white rounded-lg font-medium hover:bg-gray-700 transition-colors"
-        >
-          View matching strategies →
-        </Link>
-        <Link
-          href="/strategies"
-          className="px-8 py-3 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors"
-        >
-          Browse all strategies
-        </Link>
+        <Button asChild size="lg">
+          <Link href={`/strategies?riskLevel=${riskLevel}`}>
+            View matching strategies →
+          </Link>
+        </Button>
+        <Button asChild variant="outline" size="lg">
+          <Link href="/strategies">Browse all strategies</Link>
+        </Button>
       </div>
     </div>
   );

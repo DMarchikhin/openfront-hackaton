@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { Strategy } from '@/lib/api';
-import { Button } from '@/components/ui/Button';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 
 type RiskLevel = 'conservative' | 'balanced' | 'growth';
 
@@ -34,30 +35,30 @@ export function StrategyDetail({
   const riskDesc = RISK_DESCRIPTIONS[strategy.riskLevel as RiskLevel] ?? '';
 
   return (
-    <div className="bg-gray-50 border border-gray-200 rounded-xl p-5 space-y-5">
+    <div className="bg-muted/30 border border-border rounded-xl p-5 space-y-5">
       <div>
-        <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-1">
+        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">
           What this means for you
         </h4>
-        <p className="text-gray-700 text-sm leading-relaxed">{riskDesc}</p>
+        <p className="text-sm leading-relaxed">{riskDesc}</p>
       </div>
 
       <div>
-        <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
+        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">
           Where your money goes
         </h4>
         <div className="space-y-2">
           {strategy.poolAllocations.map((p, i) => (
             <div key={i}>
               <div className="flex justify-between text-sm mb-1">
-                <span className="text-gray-700 capitalize">
+                <span className="capitalize">
                   {p.protocol} on {p.chain}
                 </span>
-                <span className="font-semibold text-gray-900">{p.allocationPercentage}%</span>
+                <span className="font-semibold">{p.allocationPercentage}%</span>
               </div>
-              <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+              <div className="h-2 bg-secondary rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-gray-800 rounded-full"
+                  className="h-full bg-primary rounded-full"
                   style={{ width: `${p.allocationPercentage}%` }}
                 />
               </div>
@@ -68,14 +69,14 @@ export function StrategyDetail({
 
       <div className="flex gap-4 text-sm">
         <div>
-          <p className="text-gray-500">Expected APY</p>
-          <p className="font-semibold text-gray-900">
+          <p className="text-muted-foreground">Expected APY</p>
+          <p className="font-semibold">
             {strategy.expectedApyMin}–{strategy.expectedApyMax}%
           </p>
         </div>
         <div>
-          <p className="text-gray-500">Rebalance when</p>
-          <p className="font-semibold text-gray-900">&gt;{strategy.rebalanceThreshold}% difference</p>
+          <p className="text-muted-foreground">Rebalance when</p>
+          <p className="font-semibold">&gt;{strategy.rebalanceThreshold}% difference</p>
         </div>
       </div>
 
@@ -90,19 +91,17 @@ export function StrategyDetail({
         <div className="space-y-3">
           {onAmountChange && (
             <div>
-              <label className="block text-sm text-gray-500 mb-1">Amount to invest (USD)</label>
-              <input
+              <label className="block text-sm text-muted-foreground mb-1">Amount to invest (USD)</label>
+              <Input
                 type="number"
                 min="1"
                 step="100"
                 value={userAmount}
                 onChange={(e) => onAmountChange(e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400"
               />
             </div>
           )}
           <Button
-            variant="primary"
             size="lg"
             className="w-full"
             disabled={actionLoading}

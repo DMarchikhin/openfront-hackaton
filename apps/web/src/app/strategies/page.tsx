@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { fetchStrategies, fetchActiveInvestment, startInvesting, switchStrategy, Strategy } from '@/lib/api';
 import { StrategyCard } from '@/components/strategy/StrategyCard';
@@ -16,7 +16,7 @@ function getUserId(): string {
   return id;
 }
 
-export default function StrategiesPage() {
+function StrategiesContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const riskLevel = searchParams.get('riskLevel') ?? undefined;
@@ -77,7 +77,7 @@ export default function StrategiesPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[40vh]">
-        <p className="text-gray-400">Loading strategies…</p>
+        <p className="text-muted-foreground">Loading strategies…</p>
       </div>
     );
   }
@@ -85,7 +85,7 @@ export default function StrategiesPage() {
   if (error) {
     return (
       <div className="flex items-center justify-center min-h-[40vh]">
-        <p className="text-red-500">{error}</p>
+        <p className="text-destructive">{error}</p>
       </div>
     );
   }
@@ -93,11 +93,11 @@ export default function StrategiesPage() {
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Investment strategies</h1>
+        <h1 className="text-2xl font-bold">Investment strategies</h1>
         {riskLevel && (
-          <p className="mt-1 text-gray-500 text-sm">
+          <p className="mt-1 text-muted-foreground text-sm">
             Showing all strategies · your profile is{' '}
-            <span className="font-medium capitalize text-gray-700">{riskLevel}</span>
+            <span className="font-medium capitalize">{riskLevel}</span>
           </p>
         )}
       </div>
@@ -128,5 +128,17 @@ export default function StrategiesPage() {
         ))}
       </div>
     </div>
+  );
+}
+
+export default function StrategiesPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center min-h-[40vh]">
+        <p className="text-muted-foreground">Loading strategies…</p>
+      </div>
+    }>
+      <StrategiesContent />
+    </Suspense>
   );
 }

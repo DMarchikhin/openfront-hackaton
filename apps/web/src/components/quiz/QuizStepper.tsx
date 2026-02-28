@@ -5,7 +5,7 @@ import { fetchQuizQuestions, submitQuiz, QuizQuestion, QuizResult } from '@/lib/
 import { QuestionCard } from './QuestionCard';
 import { ProgressBar } from './ProgressBar';
 import { RiskResult } from './RiskResult';
-import { Button } from '@/components/ui/Button';
+import { Button } from '@/components/ui/button';
 
 function getUserId(): string {
   if (typeof window === 'undefined') return 'user-ssr';
@@ -114,15 +114,12 @@ export function QuizStepper() {
       <div className="flex justify-between">
         <Button
           variant="outline"
-          size="md"
           onClick={handleBack}
           disabled={currentIndex === 0}
         >
           ← Back
         </Button>
         <Button
-          variant="primary"
-          size="md"
           onClick={handleNext}
           disabled={!canProceed || submitting}
         >
