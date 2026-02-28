@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
   fetchActiveInvestment,
@@ -32,12 +32,17 @@ export default function DashboardPage() {
   const [portfolioError, setPortfolioError] = useState(false);
   const [loading, setLoading] = useState(true);
 
+  const loadPortfolio = useCallback((userId: string) => {
+    setPortfolioError(false);
+    return fetchPortfolio(userId)
+      .then(setPortfolio)
+      .catch(() => setPortfolioError(true));
+  }, []);
+
   useEffect(() => {
     const userId = getUserId();
 
-    const portfolioPromise = fetchPortfolio(userId)
-      .then(setPortfolio)
-      .catch(() => setPortfolioError(true));
+    const portfolioPromise = loadPortfolio(userId);
 
     const investmentPromise = fetchActiveInvestment(userId)
       .then((inv) => {
@@ -51,12 +56,19 @@ export default function DashboardPage() {
       .catch(() => setInvestment(null));
 
     Promise.all([portfolioPromise, investmentPromise]).finally(() => setLoading(false));
-  }, []);
+  }, [loadPortfolio]);
+
+  const handleRetryPortfolio = useCallback(() => {
+    loadPortfolio(getUserId());
+  }, [loadPortfolio]);
 
   const smartAccountAddress =
     portfolio?.smartAccountAddress ??
     process.env.NEXT_PUBLIC_SMART_ACCOUNT_ADDRESS ??
     '';
+
+  // T086: no-wallet-setup — address is unknown and portfolio errored (or never loaded)
+  const walletNotConfigured = !smartAccountAddress && (portfolioError || (!loading && portfolio === null));
 
   const walletSummaryProps = {
     walletBalanceUsd: portfolio?.walletBalanceUsd ?? 0,
@@ -64,12 +76,31 @@ export default function DashboardPage() {
     totalValueUsd: portfolio?.totalValueUsd ?? 0,
     smartAccountAddress,
     error: portfolioError,
+    onRetry: handleRetryPortfolio,
   };
 
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[40vh]">
         <p className="text-gray-400">Loading your dashboard…</p>
+      </div>
+    );
+  }
+
+  // T086: wallet not set up — show setup prompt instead of balance/portfolio cards
+  if (walletNotConfigured) {
+    return (
+      <div className="max-w-xl mx-auto">
+        <div className="border border-dashed border-blue-200 bg-blue-50 rounded-xl p-8 text-center">
+          <p className="text-2xl mb-2">⚙️</p>
+          <h2 className="text-base font-semibold text-gray-800">Wallet not set up</h2>
+          <p className="text-sm text-gray-500 mt-1">
+            Your smart account hasn't been configured yet. Run the setup script to get started.
+          </p>
+          <code className="block mt-3 text-xs bg-white border border-blue-200 rounded px-3 py-2 text-gray-600">
+            pnpm run setup:account
+          </code>
+        </div>
       </div>
     );
   }

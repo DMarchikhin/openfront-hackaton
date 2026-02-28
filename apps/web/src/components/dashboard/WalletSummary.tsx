@@ -8,6 +8,7 @@ interface WalletSummaryProps {
   totalValueUsd: number;
   smartAccountAddress: string;
   error?: boolean;
+  onRetry?: () => void;
 }
 
 function fmt(n: number) {
@@ -24,6 +25,7 @@ export function WalletSummary({
   totalValueUsd,
   smartAccountAddress,
   error,
+  onRetry,
 }: WalletSummaryProps) {
   const [copied, setCopied] = useState(false);
 
@@ -36,8 +38,16 @@ export function WalletSummary({
 
   if (error) {
     return (
-      <div className="border border-dashed border-gray-300 rounded-xl p-5 text-center">
+      <div className="border border-dashed border-gray-300 rounded-xl p-5 text-center space-y-2">
         <p className="text-sm text-gray-500">Unable to load balance. Please try again.</p>
+        {onRetry && (
+          <button
+            onClick={onRetry}
+            className="text-xs font-medium text-gray-600 hover:text-gray-900 underline underline-offset-2 transition-colors"
+          >
+            Try again
+          </button>
+        )}
       </div>
     );
   }

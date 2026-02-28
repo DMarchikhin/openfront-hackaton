@@ -565,11 +565,11 @@ Task T064: "Frontend API client for agent"
 
 **Purpose**: Error handling, edge cases, and end-to-end validation for portfolio features
 
-- [ ] T085 [P] Add error handling for RPC failures in apps/web/src/app/dashboard/page.tsx — if fetchPortfolio() fails, show WalletSummary in error state with message "Unable to load balance. Please try again." and a retry button. Do not block the rest of the dashboard (InvestmentSummary and AgentActions should still render from existing data).
+- [x] T085 [P] Add error handling for RPC failures in apps/web/src/app/dashboard/page.tsx — if fetchPortfolio() fails, show WalletSummary in error state with message "Unable to load balance. Please try again." and a retry button. Do not block the rest of the dashboard (InvestmentSummary and AgentActions should still render from existing data).
 
-- [ ] T086 [P] Add no-wallet-setup state to dashboard in apps/web/src/app/dashboard/page.tsx — if OPENFORT_SMART_ACCOUNT_ADDRESS is not configured (portfolio endpoint returns appropriate signal), show a setup prompt instead of balance/portfolio cards.
+- [x] T086 [P] Add no-wallet-setup state to dashboard in apps/web/src/app/dashboard/page.tsx — if OPENFORT_SMART_ACCOUNT_ADDRESS is not configured (portfolio endpoint returns appropriate signal), show a setup prompt instead of balance/portfolio cards.
 
-- [ ] T087 Run portfolio end-to-end validation — start all services (API on 3001, Web on 3000, Agent on 3002, Aave MCP on 8080). Walk through: dashboard → verify wallet balance shows real USDC balance → verify pool cards show aToken positions → click pool card → verify per-pool transaction history → verify total value = available + invested → verify zero-balance state shows funding prompt with copyable address → verify copied address matches OPENFORT_SMART_ACCOUNT_ADDRESS.
+- [x] T087 Run portfolio end-to-end validation — start all services (API on 3001, Web on 3000, Agent on 3002, Aave MCP on 8080). Walk through: dashboard → verify wallet balance shows real USDC balance → verify pool cards show aToken positions → click pool card → verify per-pool transaction history → verify total value = available + invested → verify zero-balance state shows funding prompt with copyable address → verify copied address matches OPENFORT_SMART_ACCOUNT_ADDRESS.
 
 ---
 
