@@ -6,16 +6,19 @@ import {
   fetchActiveInvestment,
   fetchAgentActions,
   fetchPortfolio,
+  executeInvestment,
   sendAgentMessage,
   ActiveInvestment,
   AgentAction,
   PortfolioResponse,
 } from '@/lib/api';
+import { useAgentStream } from '@/hooks/useAgentStream';
 import { InvestmentSummary } from '@/components/dashboard/InvestmentSummary';
 import { AgentChat } from '@/components/dashboard/AgentChat';
 import { WalletSummary } from '@/components/dashboard/WalletSummary';
 import { PortfolioSection } from '@/components/dashboard/PortfolioSection';
 import { YieldProjection } from '@/components/dashboard/YieldProjection';
+import { Button } from '@/components/ui/button';
 
 function getUserId(): string {
   if (typeof window === 'undefined') return 'user-ssr';
@@ -86,6 +89,22 @@ export default function DashboardPage() {
     return () => clearInterval(poll);
   }, [investment, actions]);
 
+  // Lift agent stream to page level so both AgentChat and WalletSummary can share state
+  const { messages: streamMessages, isConnected } = useAgentStream(investment?.investmentId ?? null);
+
+  // Refresh portfolio when agent finishes (result or error message appears)
+  useEffect(() => {
+    const last = streamMessages[streamMessages.length - 1];
+    if (last && (last.type === 'result' || last.type === 'error')) {
+      loadPortfolio(userId);
+    }
+  }, [streamMessages, loadPortfolio, userId]);
+
+  const handleInvestMore = useCallback(async (amount: number) => {
+    if (!investment) return;
+    await executeInvestment(investment.investmentId, amount);
+  }, [investment]);
+
   const handleRetryPortfolio = useCallback(() => {
     loadPortfolio(userId);
   }, [loadPortfolio, userId]);
@@ -115,6 +134,9 @@ export default function DashboardPage() {
     smartAccountAddress,
     error: portfolioError,
     onRetry: handleRetryPortfolio,
+    investmentId: investment?.investmentId ?? null,
+    onInvestMore: handleInvestMore,
+    isAgentRunning: isConnected,
   };
 
   if (loading) {
@@ -149,22 +171,16 @@ export default function DashboardPage() {
         <WalletSummary {...walletSummaryProps} />
         <div className="flex flex-col items-center gap-4 text-center">
           <div>
-            <h1 className="text-xl font-bold text-gray-900">No active investment yet</h1>
-            <p className="mt-1 text-gray-500">Take the quiz to find your strategy, then start investing.</p>
+            <h1 className="text-xl font-bold">No active investment yet</h1>
+            <p className="mt-1 text-muted-foreground">Take the quiz to find your strategy, then start investing.</p>
           </div>
           <div className="flex gap-3">
-            <Link
-              href="/quiz"
-              className="px-5 py-2 bg-gray-900 text-white rounded-lg font-medium hover:bg-gray-700 transition-colors text-sm"
-            >
-              Take the quiz →
-            </Link>
-            <Link
-              href="/strategies"
-              className="px-5 py-2 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors text-sm"
-            >
-              Browse strategies
-            </Link>
+            <Button asChild>
+              <Link href="/quiz">Take the quiz →</Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link href="/strategies">Browse strategies</Link>
+            </Button>
           </div>
         </div>
       </div>
@@ -198,6 +214,8 @@ export default function DashboardPage() {
             isProcessing={actions.length === 0 || actions.every((a) => a.status === 'pending')}
             onSendMessage={handleSendMessage}
             investment={investment}
+            streamMessages={streamMessages}
+            isConnected={isConnected}
           />
         </div>
       </div>

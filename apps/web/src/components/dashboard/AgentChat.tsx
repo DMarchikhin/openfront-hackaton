@@ -2,8 +2,11 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { AgentAction, ActiveInvestment, ChatMessage } from '@/lib/api';
-import { useAgentStream } from '@/hooks/useAgentStream';
 import { AgentActions } from './AgentActions';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { Card } from '@/components/ui/card';
 
 const QUICK_ACTIONS = ['Check my APY', 'Gas prices', "What's my balance?", 'Explain last action'];
 
@@ -13,6 +16,8 @@ interface AgentChatProps {
   isProcessing: boolean;
   onSendMessage?: (message: string) => void;
   investment: ActiveInvestment | null;
+  streamMessages: ChatMessage[];
+  isConnected: boolean;
 }
 
 // Format a tool name for display: mcp__aave__aave_get_reserves → aave_get_reserves
@@ -25,20 +30,20 @@ function ThinkingMessage({ text }: { text: string }) {
   const [expanded, setExpanded] = useState(false);
   const preview = text.length > 120 ? text.slice(0, 120) + '…' : text;
   return (
-    <div className="text-xs text-gray-400 italic">
+    <div className="text-xs text-muted-foreground italic">
       <button
         onClick={() => setExpanded((e) => !e)}
-        className="flex items-center gap-1 text-gray-400 hover:text-gray-600 transition-colors"
+        className="flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors"
       >
         <span>🧠</span>
         <span className="underline underline-offset-2">{expanded ? 'Agent thinking' : 'Agent thinking...'}</span>
         <span>{expanded ? '▲' : '▼'}</span>
       </button>
       {expanded && (
-        <p className="mt-1 ml-5 text-gray-400 whitespace-pre-wrap leading-relaxed">{text}</p>
+        <p className="mt-1 ml-5 text-muted-foreground whitespace-pre-wrap leading-relaxed">{text}</p>
       )}
       {!expanded && (
-        <p className="mt-0.5 ml-5 text-gray-300">{preview}</p>
+        <p className="mt-0.5 ml-5 text-muted-foreground/60">{preview}</p>
       )}
     </div>
   );
@@ -47,17 +52,17 @@ function ThinkingMessage({ text }: { text: string }) {
 function ToolPill({ message }: { message: ChatMessage }) {
   if (message.type === 'tool_start') {
     return (
-      <div className="flex items-center gap-2 text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-full px-3 py-1 w-fit">
-        <span className="animate-spin h-3 w-3 border-2 border-gray-400 border-t-transparent rounded-full flex-shrink-0" />
-        <span>Calling <code className="font-mono text-gray-700">{formatTool(message.tool)}</code>…</span>
+      <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted border rounded-full px-3 py-1 w-fit">
+        <span className="animate-spin h-3 w-3 border-2 border-muted-foreground border-t-transparent rounded-full flex-shrink-0" />
+        <span>Calling <code className="font-mono">{formatTool(message.tool)}</code>…</span>
       </div>
     );
   }
   if (message.type === 'tool_progress') {
     return (
-      <div className="flex items-center gap-2 text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-full px-3 py-1 w-fit">
-        <span className="animate-spin h-3 w-3 border-2 border-blue-400 border-t-transparent rounded-full flex-shrink-0" />
-        <span><code className="font-mono text-gray-700">{formatTool(message.tool)}</code> · {message.elapsed.toFixed(1)}s</span>
+      <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted border rounded-full px-3 py-1 w-fit">
+        <span className="animate-spin h-3 w-3 border-2 border-primary border-t-transparent rounded-full flex-shrink-0" />
+        <span><code className="font-mono">{formatTool(message.tool)}</code> · {message.elapsed.toFixed(1)}s</span>
       </div>
     );
   }
@@ -79,7 +84,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
 
     case 'text':
       return (
-        <div className="bg-white border border-gray-200 rounded-2xl rounded-tl-sm px-4 py-2.5 text-sm text-gray-800 max-w-[85%] leading-relaxed">
+        <div className="bg-card border rounded-2xl rounded-tl-sm px-4 py-2.5 text-sm max-w-[85%] leading-relaxed shadow-sm">
           {message.text}
         </div>
       );
@@ -91,10 +96,10 @@ function MessageBubble({ message }: { message: ChatMessage }) {
 
     case 'status':
       return (
-        <div className="flex items-center gap-3 text-xs text-gray-400 py-1">
-          <div className="flex-1 h-px bg-gray-100" />
+        <div className="flex items-center gap-3 text-xs text-muted-foreground py-1">
+          <div className="flex-1 h-px bg-border" />
           <span>{message.description}</span>
-          <div className="flex-1 h-px bg-gray-100" />
+          <div className="flex-1 h-px bg-border" />
         </div>
       );
 
@@ -102,7 +107,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
       return (
         <div className="border border-green-200 bg-green-50 rounded-xl p-4 text-sm text-green-800">
           <div className="font-semibold mb-1 text-green-700">Execution complete</div>
-          <p className="text-green-800 leading-relaxed whitespace-pre-wrap">{message.text}</p>
+          <p className="leading-relaxed whitespace-pre-wrap">{message.text}</p>
           {(message.duration != null || message.turns != null) && (
             <div className="flex gap-3 mt-2 text-xs text-green-600">
               {message.duration != null && <span>{(message.duration / 1000).toFixed(0)}s</span>}
@@ -122,7 +127,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
     case 'user':
       return (
         <div className="flex justify-end">
-          <div className="bg-blue-600 text-white rounded-2xl rounded-tr-sm px-4 py-2.5 text-sm max-w-[80%] leading-relaxed">
+          <div className="bg-primary text-primary-foreground rounded-2xl rounded-tr-sm px-4 py-2.5 text-sm max-w-[80%] leading-relaxed">
             {message.text}
           </div>
         </div>
@@ -133,8 +138,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
   }
 }
 
-export function AgentChat({ investmentId, actions, isProcessing, onSendMessage, investment }: AgentChatProps) {
-  const { messages: streamMessages, isConnected } = useAgentStream(investmentId);
+export function AgentChat({ investmentId, actions, isProcessing, onSendMessage, investment, streamMessages, isConnected }: AgentChatProps) {
   const [localMessages, setLocalMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -179,10 +183,10 @@ export function AgentChat({ investmentId, actions, isProcessing, onSendMessage, 
   const inputDisabled = isConnected;
 
   return (
-    <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+    <Card className="overflow-hidden shadow-sm">
       {/* Header */}
-      <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-100">
-        <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Agent activity</h3>
+      <div className="flex items-center justify-between px-5 py-3.5 border-b">
+        <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Agent activity</h3>
         <div className="flex items-center gap-2">
           {isConnected ? (
             <>
@@ -194,8 +198,8 @@ export function AgentChat({ investmentId, actions, isProcessing, onSendMessage, 
             </>
           ) : (
             <>
-              <span className="h-2 w-2 rounded-full bg-gray-300" />
-              <span className="text-xs text-gray-400">Ready</span>
+              <span className="h-2 w-2 rounded-full bg-muted-foreground/30" />
+              <span className="text-xs text-muted-foreground">Ready</span>
             </>
           )}
         </div>
@@ -217,41 +221,41 @@ export function AgentChat({ investmentId, actions, isProcessing, onSendMessage, 
       </div>
 
       {/* Chat input + quick-action chips */}
-      <div className="border-t border-gray-100 px-5 py-3 space-y-2">
+      <div className="border-t px-5 py-3 space-y-2">
         {/* Quick-action chips */}
         <div className="flex flex-wrap gap-1.5">
           {QUICK_ACTIONS.map((chip) => (
-            <button
+            <Badge
               key={chip}
-              onClick={() => handleChip(chip)}
-              disabled={inputDisabled}
-              className="text-xs px-3 py-1 rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              variant="secondary"
+              onClick={() => !inputDisabled && handleChip(chip)}
+              className={`cursor-pointer text-xs ${inputDisabled ? 'opacity-40 cursor-not-allowed' : 'hover:bg-secondary/80'}`}
             >
               {chip}
-            </button>
+            </Badge>
           ))}
         </div>
 
         {/* Text input */}
         <form onSubmit={handleSubmit} className="flex items-center gap-2">
-          <input
+          <Input
             ref={inputRef}
             type="text"
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             disabled={inputDisabled}
             placeholder={inputDisabled ? 'Agent is running…' : 'Ask the agent anything…'}
-            className="flex-1 text-sm px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed"
+            className="flex-1"
           />
-          <button
+          <Button
             type="submit"
+            size="sm"
             disabled={inputDisabled || !inputText.trim()}
-            className="px-3 py-2 bg-gray-900 text-white text-sm rounded-lg hover:bg-gray-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Send
-          </button>
+          </Button>
         </form>
       </div>
-    </div>
+    </Card>
   );
 }
