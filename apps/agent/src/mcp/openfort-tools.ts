@@ -1,4 +1,4 @@
-import Openfort from '@openfort/openfort-node';
+import Openfort, { Address } from "@openfort/openfort-node";
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import {
@@ -137,7 +137,7 @@ export function createOpenfortMcpServer() {
                 const backendAddr =
                   process.env.OPENFORT_BACKEND_ACCOUNT_ADDRESS ?? input.accountAddress;
                 const backendAccount = await openfort.accounts.evm.backend.get({
-                  address: backendAddr,
+                  address: backendAddr as Address,
                 });
 
                 // Use EIP-191 personal_sign — Openfort Shield returns v=0/1 (raw recovery IDs)
@@ -195,7 +195,7 @@ export function createOpenfortMcpServer() {
               account: input.accountAddress as `0x${string}`,
             });
 
-            const account = await openfort.accounts.evm.backend.get({ address: input.accountAddress });
+            const account = await openfort.accounts.evm.backend.get({ address: input.accountAddress as Address });
             const signedTx = await account.signTransaction({
               to: input.contractAddress as `0x${string}`,
               data,
