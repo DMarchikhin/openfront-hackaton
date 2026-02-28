@@ -1,4 +1,4 @@
-# Openfort DeFi App — C4 Architecture Documentation
+# CondorFlow — C4 Architecture Documentation
 
 > Auto-generated from codebase exploration. Last updated: 2026-02-28
 
@@ -18,6 +18,13 @@
    - [AllocationOptimizer](#allocationoptimizer)
    - [Investment Execution Sequence](#investment-execution-sequence)
 5. [Data Flow Narrative](#data-flow-narrative)
+   - [1. Risk Quiz](#1-risk-quiz)
+   - [2. Strategy Selection](#2-strategy-selection)
+   - [3. Investment Execution](#3-investment-execution)
+   - [4. Agent Reasoning](#4-agent-reasoning-inside-agent-server)
+   - [5. Strategy Switch / Rebalance](#5-strategy-switch--rebalance)
+   - [6. Dashboard](#6-dashboard)
+   - [7. Chat Agent Flow](#7-chat-agent-flow)
 6. [Key Design Patterns](#key-design-patterns)
 7. [Environment Variables Reference](#environment-variables-reference)
 8. [Database Schema Summary](#database-schema-summary)
@@ -30,8 +37,8 @@
 flowchart TB
     User(["👤 End User\nDeFi investor"])
 
-    subgraph App["Openfort DeFi App"]
-        Core["Openfort DeFi App\nRisk quiz · Strategy selection · AI allocation"]
+    subgraph App["CondorFlow"]
+        Core["CondorFlow\nRisk quiz · Strategy selection · AI allocation"]
     end
 
     Anthropic["☁️ Anthropic API\nClaude Sonnet 4.6"]
@@ -54,12 +61,12 @@ flowchart TB
 flowchart TB
     User(["👤 End User"])
 
-    subgraph System["Openfort DeFi App"]
+    subgraph System["CondorFlow"]
         Web["🌐 Web App\nNext.js 15 · React 19\nPort 3000"]
         API["⚙️ API Server\nNestJS 10 · MikroORM 6\nPort 3001"]
         Agent["🤖 Agent Server\nClaude Agent SDK · Node 20\nPort 3002"]
         DB[("🗄️ PostgreSQL\nPort 5432")]
-        AaveMCP["🔌 Aave MCP Server\nNode.js HTTP\nPort 8080 · External"]
+        AaveMCP["🔌 Aave MCP Server\nNode.js HTTP\nPort 8080 · apps/aave-mcp"]
     end
 
     Anthropic["☁️ Anthropic API"]
@@ -73,6 +80,8 @@ flowchart TB
     Agent -- "HTTPS\nAgent SDK" --> Anthropic
     Agent -- "HTTP JSON\ntool calls" --> AaveMCP
     Agent -- "HTTPS REST" --> Openfort
+    Agent -- "GET /stream/:investmentId\nSSE events" --> Web
+    Agent -- "POST /actions/report\nHTTP Callback" --> API
     AaveMCP -- "RPC / On-chain" --> Base
     Openfort -- "On-chain\nUserOperations" --> Base
 ```
@@ -86,10 +95,12 @@ flowchart TB
 ```mermaid
 flowchart LR
     API(["⚙️ API Server"])
+    AgentServer(["🤖 Agent Server"])
 
     subgraph Web["Web App — Next.js 15"]
         direction TB
         ApiClient["API Client\nlib/api.ts"]
+        useAgentStream["useAgentStream\nhook · SSE connection"]
 
         subgraph Quiz["Quiz Flow"]
             QuizStepper["QuizStepper\nOrchestrates state"]
@@ -106,6 +117,10 @@ flowchart LR
         subgraph Dashboard["Dashboard"]
             InvestmentSummary["InvestmentSummary\nAPY · Allocations"]
             AgentActions["AgentActions\nAgent log · Tx hashes"]
+            WalletSummary["WalletSummary\nwallet + invested + total balances"]
+            YieldProjection["YieldProjection\nProjected annual yield card"]
+            PortfolioSection["PortfolioSection\nPer-pool on-chain positions"]
+            AgentChat["AgentChat\nInteractive chat UI\nSSE + POST /chat"]
         end
     end
 
@@ -116,6 +131,12 @@ flowchart LR
     StrategyDetail -- "startInvesting\nswitchStrategy" --> ApiClient
     InvestmentSummary -- "fetchActiveInvestment" --> ApiClient
     AgentActions -- "fetchAgentActions" --> ApiClient
+    WalletSummary -- "fetchPortfolio" --> ApiClient
+    YieldProjection -- "fetchPortfolio" --> ApiClient
+    PortfolioSection -- "fetchPortfolio" --> ApiClient
+    AgentChat -- "POST /chat\nGET /stream" --> AgentServer
+    AgentChat --> useAgentStream
+    useAgentStream -- "GET /stream/:investmentId\nSSE" --> AgentServer
     ApiClient -- "HTTP REST" --> API
 ```
 
@@ -145,21 +166,26 @@ flowchart TB
         end
 
         subgraph InvMod["Investment Module"]
-            ICtrl["InvestmentController\nPOST /start · PATCH /switch\nGET /active · GET /:id/actions"]
+            ICtrl["InvestmentController\nPOST /start · PATCH /switch\nGET /active · GET /:id/actions\nGET /portfolio · POST /:id/actions/report"]
             StartUC["StartInvestingUC"]
             SwitchUC["SwitchStrategyUC"]
             ExecUC["ExecuteInvestmentUC\nHTTP → Agent Server"]
+            GetPortfolioUC["GetPortfolioUC\nOn-chain balance reads\nFormats PortfolioResponse"]
+            ReportActionsUC["ReportActionsUC\nReceives agent callback\nSaves AgentAction[]"]
             IRepo["InvestmentRepo"]
             AARepo["AgentActionRepo"]
         end
     end
 
     Web --> QCtrl & SCtrl & ICtrl
+    Agent -- "POST /:id/actions/report" --> ICtrl
     QCtrl --> GetQUC --> QRepo
     QCtrl --> SubmitUC --> RARepo
     SCtrl --> GetSUC --> SRepo
     ICtrl --> StartUC --> IRepo
     ICtrl --> SwitchUC --> IRepo
+    ICtrl --> GetPortfolioUC
+    ICtrl --> ReportActionsUC --> AARepo
     StartUC -. "async" .-> ExecUC
     SwitchUC -. "async" .-> ExecUC
     ExecUC -- "POST /execute\nPOST /rebalance" --> Agent
@@ -178,21 +204,29 @@ flowchart TB
 
     subgraph Agent["Agent Server — Node.js 20"]
         direction TB
-        HTTPServer["HTTP Server\nserver.ts\nGET /health · POST /execute · POST /rebalance"]
+        HTTPServer["HTTP Server\nserver.ts\nGET /health · POST /execute · POST /rebalance\nGET /stream/:investmentId · POST /chat"]
+        SSEBroadcaster["SSE Broadcaster\nbroadcastEvent()\nFan-out to all subscribers"]
         Executor["Agent Executor\nindex.ts\nexecuteInvestment() · rebalanceInvestment()"]
-        Prompts["Agent Prompts\nagent-prompt.ts\nbuildAgentPrompt() · buildRebalancePrompt()"]
+        ChatExecutor["Chat Executor\nchat mode · maxTurns: 5\nread-only tool allow-list"]
+        Prompts["Agent Prompts\nagent-prompt.ts\nbuildAgentPrompt() · buildRebalancePrompt()\nbuildChatPrompt()"]
         AaveAdapter["Aave MCP Adapter\nmcp/aave-tools.ts\naave_get_reserves · get_gas_price · aave_stake"]
         OpenfortMCP["Openfort MCP Tools\nmcp/openfort-tools.ts\ncreate_transaction · get_balance"]
+        ApiMCP["API Data Tools\nmcp/api-tools.ts\nget_portfolio · get_investment_actions"]
         Optimizer["AllocationOptimizer\ndomain/allocation-optimizer.ts\ncomputeAllocations()"]
     end
 
     API -- "POST /execute\nPOST /rebalance" --> HTTPServer
+    HTTPServer --> SSEBroadcaster
     HTTPServer --> Executor
+    HTTPServer --> ChatExecutor
     Executor --> Prompts
     Executor --> AaveAdapter
     Executor --> OpenfortMCP
     Executor --> Optimizer
     Executor -- "query() Agent SDK" --> Anthropic
+    ChatExecutor --> Prompts
+    ChatExecutor --> ApiMCP
+    ChatExecutor -- "query() Agent SDK" --> Anthropic
     AaveAdapter -- "POST /mcp" --> AaveMCPServer
     OpenfortMCP -- "createTransactionIntent" --> OpenfortPlatform
 ```
@@ -353,35 +387,49 @@ sequenceDiagram
     Web->>API: POST /investments/start
     API-->>Web: 201 { investmentId, status: active }
 
+    Web->>Agent: GET /stream/:investmentId (SSE subscribe)
+    Agent-->>Web: StreamEvent(connected)
+
     Note over API,Agent: 🔄 Fire-and-forget async
 
     API->>Agent: POST /execute { investmentId, strategy, amount, wallet }
+    Agent-->>Web: StreamEvent(thinking)
     Agent->>Claude: query(prompt + MCP servers)
 
     Claude->>Aave: aave_get_reserves()
+    Agent-->>Web: StreamEvent(tool_start: aave_get_reserves)
     Aave->>Chain: Read Aave V3 reserves (Base Mainnet)
     Aave-->>Claude: APY data per pool
+    Agent-->>Web: StreamEvent(tool_result)
 
     Claude->>Aave: get_gas_price()
+    Agent-->>Web: StreamEvent(tool_start: get_gas_price)
     Aave-->>Claude: gasPrice gwei + USD cost
+    Agent-->>Web: StreamEvent(tool_result)
 
     Note over Claude: AllocationOptimizer: skip if gas > annual yield
 
     Claude->>Openfort: openfort_create_transaction(supply USDC)
+    Agent-->>Web: StreamEvent(tool_start: create_transaction)
     Openfort->>Chain: Submit ERC-4337 UserOp (Base Sepolia)
     Chain-->>Openfort: txHash
     Openfort-->>Claude: { txHash, status: executed }
+    Agent-->>Web: StreamEvent(tool_result)
 
     Claude-->>Agent: JSON { actions[], totalAllocated, averageApy }
-    Agent->>API: (parsed response)
-    API->>API: Save AgentAction entities (EXECUTED + txHash)
+    Agent-->>Web: StreamEvent(result)
+    Agent-->>Web: StreamEvent(done)
+    Agent->>API: POST /investments/:id/actions/report { actions[] }
+    API->>API: ReportActionsUC saves AgentAction[] entities
 
     User->>Web: Open Dashboard
     Web->>API: GET /investments/active?userId=...
     API-->>Web: ActiveInvestment + last agent action
     Web->>API: GET /investments/:id/actions
     API-->>Web: AgentAction[] history
-    Web-->>User: Dashboard: strategy · APY · agent log
+    Web->>API: GET /api/investments/portfolio?userId=...
+    API-->>Web: PortfolioResponse (on-chain balances + yield)
+    Web-->>User: Dashboard: strategy · APY · agent log · portfolio
 ```
 
 ---
@@ -415,7 +463,9 @@ sequenceDiagram
 2. Async (fire-and-forget): `ExecuteInvestmentUseCase.execute()`:
    - HTTP POST to `AGENT_SERVICE_URL/execute` with investment params
    - If agent service not configured: creates PENDING `AgentAction` placeholder
-   - On response: parses `actions[]` and saves each as `AgentAction` entity
+2b. Frontend opens SSE connection: `GET /stream/:investmentId` on Agent Server
+2c. Agent broadcasts real-time `StreamEvent`s: `thinking`, `tool_start`, `tool_progress`, `tool_result`, `result`, `done`
+2d. On `done`, Agent POSTs result to `API /investments/:id/actions/report`; API saves `AgentAction[]` via `ReportActionsUC`
 
 ### 4. Agent Reasoning (inside Agent Server)
 
@@ -439,8 +489,20 @@ sequenceDiagram
 
 1. `GET /investments/active?userId=...` → active strategy + last agent action
 2. `GET /investments/:id/actions` → full `AgentAction[]` history
-3. `InvestmentSummary` shows strategy, APY, pool allocations
-4. `AgentActions` shows chronological log with status badges and tx hashes
+3. `GET /api/investments/portfolio?userId=X` → `GetPortfolioUseCase` reads on-chain aToken balances via viem, computes yield, returns `PortfolioResponse`
+4. `WalletSummary` shows wallet balance, invested amount, total value
+5. `YieldProjection` shows projected annual return
+6. `AgentChat` opens SSE stream for interactive queries; `POST /chat` sends user messages to read-only agent with `get_portfolio` + `get_investment_actions` tools
+7. `InvestmentSummary` shows strategy, APY, pool allocations
+8. `AgentActions` shows chronological log with status badges and tx hashes
+
+### 7. Chat Agent Flow
+
+1. User types message in `AgentChat` → `POST /chat { message, userId, investmentId }`
+2. Agent Server creates read-only Claude agent with `buildChatPrompt()` (maxTurns: 5)
+3. Allowed tools: all Aave/Openfort read tools + `get_portfolio` + `get_investment_actions`
+4. Agent streams `thinking` + `text` events via SSE
+5. Chat ends with `done` event; SSE connection remains open for next message
 
 ---
 
@@ -455,20 +517,30 @@ All NestJS modules follow hexagonal architecture:
 
 This keeps business logic testable and decoupled from NestJS/MikroORM specifics.
 
-### Fire-and-Forget Agent Invocation
+### SSE Real-Time Streaming
 
-The API never awaits agent completion for user-facing requests. Pattern:
 ```
-POST /investments/start → 201 immediately
-             └─ async ─→ POST /execute (agent server)
-                              └─ AI runs for 30–120s
-                                   └─ API saves AgentActions to DB
+Web opens GET /stream/:investmentId
+Agent.broadcastEvent({ type: 'thinking', text })
+Agent.broadcastEvent({ type: 'tool_start', tool })
+Agent.broadcastEvent({ type: 'tool_result', result })
+Agent.broadcastEvent({ type: 'result', text })
+Agent.broadcastEvent({ type: 'done' })
 ```
-This prevents HTTP timeouts while still persisting agent results for dashboard display.
+SSE connection stays alive after execution completes so it can serve interactive chat events.
+
+### Agent Callback Pattern
+
+```
+POST /execute → 202 immediately
+  └─ Agent runs (30–120s), broadcasts SSE events
+       └─ POST /investments/:id/actions/report → API saves AgentAction[]
+```
+The API never awaits agent completion for user-facing requests, preventing HTTP timeouts while still persisting agent results for dashboard display.
 
 ### In-Process MCP Server (Aave SSE Workaround)
 
-The external Aave MCP server uses a non-standard SSE transport incompatible with the Claude Agent SDK. Solution: `createAaveMcpServer()` in `mcp/aave-tools.ts` creates an in-process MCP server that:
+The Aave MCP server (`apps/aave-mcp` — in-monorepo) uses a non-standard SSE transport incompatible with the Claude Agent SDK. Solution: `createAaveMcpServer()` in `mcp/aave-tools.ts` creates an in-process MCP server that:
 1. Receives tool calls from Claude Agent SDK via standard stdio/in-process protocol
 2. Translates them to `POST http://localhost:8080/mcp` HTTP calls
 3. Returns results back to the agent
@@ -612,8 +684,8 @@ The external Aave MCP server uses a non-standard SSE transport incompatible with
 ```bash
 # 1. PostgreSQL (system service — must be running)
 
-# 2. Aave MCP Server (external project)
-cd /Users/dm/Projects/aave-mcp && npm start   # port 8080
+# 2. Aave MCP Server (monorepo — apps/aave-mcp)
+cd apps/aave-mcp && pnpm dev                   # port 8080
 
 # 3. NestJS API
 cd apps/api && pnpm dev                        # port 3001
@@ -625,4 +697,4 @@ cd apps/agent && env -u CLAUDECODE tsx src/server.ts   # port 3002
 cd apps/web && pnpm dev                        # port 3000
 ```
 
-> **Note:** The `CLAUDECODE` environment variable is unset before starting the agent server because the Claude CLI refuses to spawn child processes inside an existing Claude Code session. The agent server's `server.ts` also calls `delete process.env.CLAUDECODE` at
+> **Note:** The `CLAUDECODE` environment variable is unset before starting the agent server because the Claude CLI refuses to spawn child processes inside an existing Claude Code session. The agent server's `server.ts` also calls `delete process.env.CLAUDECODE` at startup for the same reason.

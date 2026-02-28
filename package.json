@@ -10,7 +10,8 @@
     "dev:aave-mcp": "pnpm --filter aave-mcp start:dev",
     "dev:all": "concurrently \"pnpm --filter api dev\" \"pnpm --filter web dev\" \"pnpm --filter agent server\" \"pnpm --filter aave-mcp start:dev\"",
     "build": "pnpm --filter api build && pnpm --filter web build",
-    "test": "pnpm --filter api test"
+    "test": "pnpm --filter api test",
+    "slides:dev": "pnpm --filter slides dev"
   },
   "devDependencies": {
     "concurrently": "^9.1.0"
