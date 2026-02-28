@@ -27,6 +27,7 @@ export default function StrategiesPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hasActiveInvestment, setHasActiveInvestment] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const [userAmount, setUserAmount] = useState('1000');
 
   useEffect(() => {
     const userId = getUserId();
@@ -50,7 +51,7 @@ export default function StrategiesPage() {
     if (!selected) return;
     setActionLoading(true);
     try {
-      await startInvesting({ userId: getUserId(), strategyId: selected.id });
+      await startInvesting({ userId: getUserId(), strategyId: selected.id, userAmount });
       router.push('/dashboard');
     } catch {
       setError('Could not start investing. Please try again.');
@@ -62,7 +63,7 @@ export default function StrategiesPage() {
     if (!selected) return;
     setActionLoading(true);
     try {
-      await switchStrategy({ userId: getUserId(), newStrategyId: selected.id });
+      await switchStrategy({ userId: getUserId(), newStrategyId: selected.id, userAmount });
       router.push('/dashboard');
     } catch {
       setError('Could not switch strategy. Please try again.');
@@ -114,6 +115,8 @@ export default function StrategiesPage() {
                   onStartInvesting={handleStartInvesting}
                   onSwitchStrategy={handleSwitchStrategy}
                   actionLoading={actionLoading}
+                  userAmount={userAmount}
+                  onAmountChange={setUserAmount}
                 />
               </div>
             )}
