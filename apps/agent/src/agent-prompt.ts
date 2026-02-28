@@ -25,8 +25,28 @@ export interface RebalanceContext {
   };
 }
 
+// Contract addresses by chain ID
+const CHAIN_CONTRACTS: Record<number, { aavePool: string; usdc: string; weth: string; name: string }> = {
+  8453: {
+    name: 'Base Mainnet',
+    aavePool: '0xA238Dd80C259a72e81d7e4664a9801593F98d1c5',
+    usdc: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+    weth: '0x4200000000000000000000000000000000000006',
+  },
+  84532: {
+    name: 'Base Sepolia (Testnet)',
+    aavePool: '0x07eA79F68B2B3df564D0A34F8e19D9B1e339814b',
+    usdc: '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
+    weth: '0x4200000000000000000000000000000000000006',
+  },
+};
+
+function getChainContracts(chainId: number) {
+  return CHAIN_CONTRACTS[chainId] ?? CHAIN_CONTRACTS[8453];
+}
+
 export function buildRebalancePrompt(context: RebalanceContext): string {
-  const chainName = context.chainId === 84532 ? 'Base Sepolia' : 'the target chain';
+  const contracts = getChainContracts(context.chainId);
 
   const oldPools = context.previousStrategy.poolAllocations
     .map((p) => `  - ${p.allocationPercentage}% in ${p.protocol} on ${p.chain} (${p.asset})`)
@@ -44,9 +64,16 @@ export function buildRebalancePrompt(context: RebalanceContext): string {
 ## Rebalance Context
 - Investment ID: ${context.investmentId}
 - Wallet Address: ${context.walletAddress}
-- Chain ID: ${context.chainId}
+- Network: ${contracts.name} (Chain ID: ${context.chainId})
 - Total Amount: ~$${context.totalAmountUsd.toFixed(2)} USD
 - Rebalance Threshold: ${context.newStrategy.rebalanceThreshold}% APY difference minimum
+
+## Contract Addresses for Chain ${context.chainId}
+- Aave V3 Pool: \`${contracts.aavePool}\`
+- USDC Token: \`${contracts.usdc}\`
+- WETH Token: \`${contracts.weth}\`
+
+Use these exact addresses when calling \`openfort_create_transaction\`. Set \`contractAddress\` to the Aave V3 Pool address above.
 
 ## Previous Strategy: ${context.previousStrategy.name}
 Current positions to withdraw from:
@@ -60,17 +87,25 @@ ${newPools}
 
 Execute the following steps **in order**:
 
-1. **Check gas prices**: Call \`get_gas_price\` on ${chainName} before doing anything.
+1. **Check gas prices**: Call \`get_gas_price\` before doing anything.
 
-2. **Check current Aave rates**: For each pool in the NEW strategy, call \`aave_get_reserves\` to get current supply APY.
+2. **Check current Aave rates**: For each pool in the NEW strategy, call \`aave_get_reserves\` to get current supply APY. Note: rate data may reflect mainnet conditions; use as reference for decision-making.
 
 3. **For each PREVIOUS pool**:
    - Check if this pool exists in the new strategy at the same or higher allocation
-   - If NOT in new strategy (or at lower allocation): withdraw the difference via \`openfort_create_transaction\` with \`functionName: "withdraw"\`
+   - If NOT in new strategy (or at lower allocation): withdraw the difference via \`openfort_create_transaction\`:
+     - \`chainId\`: ${context.chainId}
+     - \`contractAddress\`: ${contracts.aavePool}
+     - \`functionName\`: "withdraw"
+     - \`accountAddress\`: ${context.walletAddress}
    - Skip the withdrawal if gas cost exceeds projected benefit
 
 4. **For each NEW pool**:
-   - Supply the target allocation amount via \`openfort_create_transaction\` with \`functionName: "supply"\`
+   - Supply the target allocation amount via \`openfort_create_transaction\`:
+     - \`chainId\`: ${context.chainId}
+     - \`contractAddress\`: ${contracts.aavePool}
+     - \`functionName\`: "supply"
+     - \`accountAddress\`: ${context.walletAddress}
    - Skip if gas cost exceeds projected annual yield improvement
 
 5. **Return structured result** as JSON:
@@ -120,6 +155,8 @@ export interface InvestmentContext {
 }
 
 export function buildAgentPrompt(context: InvestmentContext): string {
+  const contracts = getChainContracts(context.chainId);
+
   const allocationList = context.poolAllocations
     .map(
       (p) =>
@@ -134,8 +171,18 @@ export function buildAgentPrompt(context: InvestmentContext): string {
 - Strategy: ${context.strategyName} (${context.riskLevel} risk)
 - Total Amount: $${context.totalAmountUsd.toFixed(2)} USD
 - Wallet Address: ${context.walletAddress}
-- Chain ID: ${context.chainId}
+- Network: ${contracts.name} (Chain ID: ${context.chainId})
 - Rebalance Threshold: ${context.rebalanceThreshold}% APY difference minimum
+
+## Contract Addresses for Chain ${context.chainId}
+- Aave V3 Pool: \`${contracts.aavePool}\`
+- USDC Token: \`${contracts.usdc}\`
+- WETH Token: \`${contracts.weth}\`
+
+When calling \`openfort_create_transaction\`, use:
+- \`contractAddress\`: the Aave V3 Pool address above
+- \`chainId\`: ${context.chainId}
+- \`accountAddress\`: ${context.walletAddress}
 
 ## Approved Pool Allocations
 ${allocationList}
@@ -145,9 +192,9 @@ ${context.currentApy !== undefined ? `\n## Current APY\nUser is currently earnin
 
 Execute the following steps **in order**:
 
-1. **Check current Aave rates**: For each pool in the approved allocations, call \`aave_get_reserves\` to get the current supply APY.
+1. **Check current Aave rates**: Call \`aave_get_reserves\` to get the current supply APY for available pools. Note: the Aave MCP returns live mainnet rate data as a reference for decision-making.
 
-2. **Check gas prices**: Call \`get_gas_price\` to get current gas costs on ${context.chainId === 84532 ? 'Base Sepolia' : 'the target chain'}.
+2. **Check gas prices**: Call \`get_gas_price\` to get current gas costs.
 
 3. **Analyze cost-benefit for each pool**:
    - Calculate the projected annual yield for each allocation
@@ -155,13 +202,16 @@ Execute the following steps **in order**:
    - Skip any pool where gas cost exceeds projected annual yield
    - If \`currentApy\` is set, skip rebalances where the improvement is below the rebalance threshold
 
-4. **Execute approved allocations**: For each pool that passes the cost-benefit check, call \`openfort_create_transaction\` to supply funds. Use the following parameters:
+4. **Execute approved allocations**: For each pool that passes the cost-benefit check, call \`openfort_create_transaction\`:
    - \`chainId\`: ${context.chainId}
+   - \`contractAddress\`: ${contracts.aavePool}
    - \`accountAddress\`: ${context.walletAddress}
    - \`functionName\`: "supply"
-   - \`functionArgs\`: [asset_address, amount_in_wei, on_behalf_of_address, referral_code]
+   - \`functionArgs\`: ["<usdc_address>", "<amount_in_wei>", "${context.walletAddress}", "0"]
 
-5. **Return structured result**: After processing all allocations, output a JSON summary with this exact structure:
+   For USDC supply, use token address \`${contracts.usdc}\`.
+
+5. **Return structured result**: After processing all allocations, output a JSON summary:
 \`\`\`json
 {
   "investmentId": "${context.investmentId}",

@@ -57,7 +57,7 @@ export class ExecuteInvestmentUseCase {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(params),
-          signal: AbortSignal.timeout(30_000),
+          signal: AbortSignal.timeout(120_000),
         });
         if (!response.ok) throw new Error(`Agent service returned ${response.status}`);
         const result = (await response.json()) as { actions?: any[] };
@@ -114,7 +114,7 @@ export class ExecuteInvestmentUseCase {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(params),
-          signal: AbortSignal.timeout(30_000),
+          signal: AbortSignal.timeout(120_000),
         });
 
         if (!response.ok) {

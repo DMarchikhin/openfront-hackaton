@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { buildAgentPrompt, buildRebalancePrompt, InvestmentContext, RebalanceContext } from './agent-prompt.js';
 import { createOpenfortMcpServer } from './mcp/openfort-tools.js';
+import { createAaveMcpServer } from './mcp/aave-tools.js';
 
 export interface StrategyParam {
   id: string;
@@ -81,7 +82,7 @@ export async function executeInvestment(params: ExecuteInvestmentParams): Promis
   };
 
   const prompt = buildAgentPrompt(context);
-  const aaveMcpUrl = process.env.AAVE_MCP_URL ?? 'http://localhost:8080/mcp/sse';
+  const aaveServer = createAaveMcpServer();
   const openfortServer = createOpenfortMcpServer();
 
   let resultText = '';
@@ -91,7 +92,7 @@ export async function executeInvestment(params: ExecuteInvestmentParams): Promis
       prompt,
       options: {
         mcpServers: {
-          aave: { type: 'sse', url: aaveMcpUrl },
+          aave: aaveServer,
           openfort: openfortServer,
         },
         allowedTools: [
@@ -150,7 +151,7 @@ export async function rebalanceInvestment(params: RebalanceParams): Promise<Agen
   };
 
   const prompt = buildRebalancePrompt(context);
-  const aaveMcpUrl = process.env.AAVE_MCP_URL ?? 'http://localhost:8080/mcp/sse';
+  const aaveServer = createAaveMcpServer();
   const openfortServer = createOpenfortMcpServer();
 
   let resultText = '';
@@ -160,7 +161,7 @@ export async function rebalanceInvestment(params: RebalanceParams): Promise<Agen
       prompt,
       options: {
         mcpServers: {
-          aave: { type: 'sse', url: aaveMcpUrl },
+          aave: aaveServer,
           openfort: openfortServer,
         },
         allowedTools: [

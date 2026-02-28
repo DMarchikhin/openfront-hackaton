@@ -1,4 +1,6 @@
 import 'dotenv/config';
+// Allow claude CLI to spawn as a child process even when started from within a Claude Code session
+delete process.env.CLAUDECODE;
 import http from 'http';
 import { executeInvestment, rebalanceInvestment, ExecuteInvestmentParams, RebalanceParams } from './index.js';
 
